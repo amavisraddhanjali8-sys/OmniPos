@@ -25,9 +25,9 @@ export const handleHtml2CanvasClone = (clonedDoc: Document) => {
     }
 
     /* Force hex colors for common print elements to avoid oklab/oklch parsing errors in html2canvas */
-    .text-primary { color: #f97316 !important; }
-    .bg-primary { background-color: #f97316 !important; }
-    .border-primary { border-color: #f97316 !important; }
+    .text-primary { color: #f62440 !important; }
+    .bg-primary { background-color: #f62440 !important; }
+    .border-primary { border-color: #f62440 !important; }
     .bg-gray-50 { background-color: #f9fafb !important; }
     .bg-gray-100 { background-color: #f3f4f6 !important; }
     .bg-gray-200 { background-color: #e5e7eb !important; }

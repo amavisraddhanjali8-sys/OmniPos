@@ -114,6 +114,8 @@ export interface Invoice {
   invoiceNumber: string;
   quotationId?: string;
   quotationNumber?: string;
+  orderId?: string;
+  orderNumber?: string;
   clientId: string;
   clientName: string;
   date: string;
@@ -208,6 +210,10 @@ export interface Transaction {
   status?: 'Completed' | 'Refunded' | 'Pending';
   stockReduced?: boolean;
   referenceId?: string;
+  quotationId?: string;
+  quotationNumber?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
   clientId?: string;
   clientName?: string;
   supplierId?: string;

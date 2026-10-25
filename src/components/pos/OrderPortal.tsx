@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Search, Filter, Eye, Trash2, Download, Receipt, Calendar, User, ShoppingBag, FileDown, Phone, Mail, Globe, Printer, RefreshCcw } from 'lucide-react';
-import { Transaction, CompanySettings } from '../../types';
+import { Search, Filter, Eye, Trash2, Download, Receipt, Calendar, User, ShoppingBag, FileDown, Phone, Mail, Globe, Printer, RefreshCcw, FileText } from 'lucide-react';
+import { Transaction, CompanySettings, Invoice } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 import { translations, Language } from '../../i18n';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,6 +17,8 @@ interface OrderPortalProps {
   onDeleteOrder: (id: string) => void;
   onClearOrders: () => void;
   onReviseOrder: (order: Transaction) => void;
+  onConvertToInvoice?: (order: Transaction) => void;
+  invoices?: Invoice[];
   companySettings: CompanySettings;
   language?: Language;
   searchQuery: string;
@@ -28,6 +30,8 @@ export default function OrderPortal({
   onDeleteOrder, 
   onClearOrders, 
   onReviseOrder, 
+  onConvertToInvoice,
+  invoices = [],
   companySettings, 
   language = 'en',
   searchQuery,
@@ -179,54 +183,80 @@ export default function OrderPortal({
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order) => (
-                    <tr 
-                      key={order.id} 
-                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${selectedOrder?.id === order.id ? 'bg-primary/5' : ''}`}
-                      onClick={() => setSelectedOrder(order)}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                            <ShoppingBag size={14} />
+                  filteredOrders.map((order) => {
+                    const linkedInvoice = invoices.find(inv => inv.orderId === order.id);
+                    return (
+                      <tr 
+                        key={order.id} 
+                        className={`hover:bg-gray-50 transition-colors cursor-pointer ${selectedOrder?.id === order.id ? 'bg-primary/5' : ''}`}
+                        onClick={() => setSelectedOrder(order)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                              <ShoppingBag size={14} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs font-bold text-gray-700">#{order.id.slice(-6).toUpperCase()}</span>
+                                {linkedInvoice && (
+                                  <span className="px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 text-[8px] font-bold rounded-md">
+                                    {linkedInvoice.invoiceNumber}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-gray-400 font-medium truncate max-w-[120px]">
+                                {order.clientName || 'Walk-in Customer'}
+                              </p>
+                            </div>
                           </div>
-                          <span className="font-mono text-xs font-bold text-gray-700">#{order.id.slice(-6).toUpperCase()}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-xs text-gray-900 font-medium">
-                          {new Date(order.date).toLocaleDateString()}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs font-bold text-primary">{formatCurrency(order.amount)}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-0.5 bg-green-50 text-green-600 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                          {order.status === 'Completed' ? t.completed : order.status || t.completed}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
-                            className="p-1.5 text-gray-400 hover:text-primary transition-colors"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onDeleteOrder(order.id); }}
-                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-xs text-gray-900 font-medium">
+                            {new Date(order.date).toLocaleDateString()}
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-xs font-bold text-primary">{formatCurrency(order.amount)}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-0.5 bg-green-50 text-green-600 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                            {order.status === 'Completed' ? t.completed : order.status || t.completed}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-1.5">
+                            {onConvertToInvoice && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onConvertToInvoice(order); }}
+                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                title={linkedInvoice ? "View Invoice" : "Generate Invoice"}
+                              >
+                                <FileText size={16} />
+                              </button>
+                            )}
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
+                              className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                              title="View Order"
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); onDeleteOrder(order.id); }}
+                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete Order"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -271,6 +301,22 @@ export default function OrderPortal({
                       <span className="text-gray-500">{t.orderId}</span>
                       <span className="font-mono font-bold text-gray-900">#{selectedOrder.id.toUpperCase()}</span>
                     </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Customer</span>
+                      <span className="font-bold text-gray-900">{selectedOrder.clientName || 'Walk-in Customer'}</span>
+                    </div>
+                    {(() => {
+                      const linkedInv = invoices.find(inv => inv.orderId === selectedOrder.id);
+                      if (linkedInv) {
+                        return (
+                          <div className="flex justify-between text-xs items-center bg-green-50 p-1.5 rounded-lg border border-green-200">
+                            <span className="text-green-700 font-bold text-[10px]">Linked Tax Invoice</span>
+                            <span className="font-mono font-black text-green-800 text-[10px]">#{linkedInv.invoiceNumber}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-500">{t.date}</span>
                       <span className="font-bold text-gray-900">{new Date(selectedOrder.date).toLocaleString()}</span>
@@ -353,29 +399,42 @@ export default function OrderPortal({
                   <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">{t.thankYou}</p>
                 </div>
               </div>
-              <div className="p-4 bg-gray-50 border-t border-gray-100 grid grid-cols-3 gap-2">
+              <div className="p-3 bg-gray-50 border-t border-gray-100 grid grid-cols-4 gap-1.5">
                 <button 
                   onClick={() => setShowPrintPortal(true)}
                   disabled={isGeneratingPDF}
-                  className="flex items-center justify-center gap-2 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-50"
+                  className="flex flex-col items-center justify-center gap-1 py-2 px-1 bg-white border border-gray-200 rounded-xl text-[10px] font-bold text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-50"
+                  title="Print Preview"
                 >
-                  <Printer size={14} />
-                  {t.preview}
+                  <Printer size={13} />
+                  <span>{t.preview}</span>
                 </button>
                 <button 
                   onClick={() => onReviseOrder(selectedOrder)}
-                  className="flex items-center justify-center gap-2 py-2 bg-amber-50 text-amber-600 border border-amber-100 rounded-xl text-xs font-bold hover:bg-amber-100 transition-all"
+                  className="flex flex-col items-center justify-center gap-1 py-2 px-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-[10px] font-bold hover:bg-amber-100 transition-all"
+                  title="Revise Order"
                 >
-                  <RefreshCcw size={14} />
-                  {t.revise}
+                  <RefreshCcw size={13} />
+                  <span>{t.revise}</span>
                 </button>
+                {onConvertToInvoice && (
+                  <button 
+                    onClick={() => onConvertToInvoice(selectedOrder)}
+                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-[10px] font-bold hover:bg-emerald-100 transition-all"
+                    title="Generate Tax Invoice"
+                  >
+                    <FileText size={13} />
+                    <span>Invoice</span>
+                  </button>
+                )}
                 <button 
                   onClick={handleDownloadPDF}
                   disabled={isGeneratingPDF}
-                  className="flex items-center justify-center gap-2 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+                  className="flex flex-col items-center justify-center gap-1 py-2 px-1 bg-primary text-white rounded-xl text-[10px] font-bold hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+                  title="Download PDF"
                 >
-                  {isGeneratingPDF ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={14} />}
-                  {isGeneratingPDF ? '...' : 'PDF'}
+                  {isGeneratingPDF ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={13} />}
+                  <span>{isGeneratingPDF ? '...' : 'PDF'}</span>
                 </button>
               </div>
             </motion.div>

@@ -55,8 +55,16 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
               <div className="space-y-0.5 text-[9pt]">
                 <p className="text-gray-500 font-bold uppercase tracking-wider">Invoice Number: <span className="text-gray-900 font-mono ml-2">{invoice.invoiceNumber}</span></p>
                 <p className="text-gray-500 font-bold uppercase tracking-wider">Invoice Date: <span className="text-gray-900 ml-2">{new Date(invoice.date).toLocaleDateString()}</span></p>
-                <p className="text-gray-500 font-bold uppercase tracking-wider">Due Date: <span className="text-gray-900 ml-2">{new Date(invoice.dueDate).toLocaleDateString()}</span></p>
-                {invoice.quotationId && <p className="text-gray-500 font-bold uppercase tracking-wider text-[7pt]">Ref Quote: <span className="text-gray-900 ml-2">{invoice.quotationId}</span></p>}
+                {(invoice.quotationNumber || invoice.quotationId) && (
+                  <p className="text-gray-500 font-bold uppercase tracking-wider text-[8pt]">
+                    Quotation Ref: <span className="text-primary font-mono ml-2 font-bold">{invoice.quotationNumber || invoice.quotationId}</span>
+                  </p>
+                )}
+                {invoice.orderId && (
+                  <p className="text-gray-500 font-bold uppercase tracking-wider text-[8pt]">
+                    POS Order Ref: <span className="text-gray-900 font-mono ml-2 font-bold">#{invoice.orderId.slice(-6).toUpperCase()}</span>
+                  </p>
+                )}
               </div>
             </td>
           </tr>
@@ -137,43 +145,34 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
       </div>
 
       {/* Totals & Terms Table */}
-      <table className="w-full border-collapse mb-8">
+      {/* Totals & Notes Table */}
+      <table className="w-full border-collapse mb-6">
         <tbody>
           <tr>
-            <td className="w-1/2 pr-6 align-top">
-              <div className="space-y-6">
-                {termsToDisplay.length > 0 && (
-                  <div>
-                    <h4 className="text-[8pt] font-black uppercase text-gray-400 mb-2 tracking-widest border-b border-gray-100 pb-1">Terms & Conditions:</h4>
-                    <ul className="list-decimal list-inside text-[8pt] text-gray-500 space-y-1 pl-2">
-                      {termsToDisplay.map((t, i) => <li key={i} className="leading-relaxed">{t}</li>)}
-                    </ul>
+            <td className="w-1/2 pr-4 align-top">
+              <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-100 h-full flex flex-col justify-between">
+                <div>
+                  <h4 className="text-[8pt] font-black uppercase text-gray-500 mb-1.5 tracking-wider">Invoice Notes & Payment</h4>
+                  <p className="text-[8pt] text-gray-600 leading-relaxed">
+                    {invoice.notes || `Thank you for your business. Please reference invoice #${invoice.invoiceNumber} upon settlement.`}
+                  </p>
+                </div>
+                <div className="pt-4 mt-2 border-t border-gray-200/60 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center border border-primary/20 text-primary font-black text-[9pt]">
+                    PAID
                   </div>
-                )}
-                {invoice.notes && (
                   <div>
-                    <h4 className="text-[8pt] font-black uppercase text-gray-400 mb-1 tracking-widest">Notes:</h4>
-                    <p className="text-[8pt] text-gray-500 italic">{invoice.notes}</p>
-                  </div>
-                )}
-                <div className="pt-6 border-t border-gray-100">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-100">
-                      <span className="text-[8pt] font-black text-gray-300">QR</span>
-                    </div>
-                    <div>
-                      <p className="text-[8pt] font-bold text-gray-900 uppercase">Scan to Pay</p>
-                      <p className="text-[7pt] text-gray-400">Use any banking app</p>
-                    </div>
+                    <p className="text-[8pt] font-bold text-gray-900 uppercase">Official Tax Invoice</p>
+                    <p className="text-[7pt] text-gray-500">Authorized accounting document</p>
                   </div>
                 </div>
               </div>
             </td>
-            <td className="w-1/2 pl-6 align-top">
-              <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 space-y-3">
+            <td className="w-1/2 pl-4 align-top">
+              <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 space-y-2.5">
                 <div className="flex justify-between text-[9pt] text-gray-500">
                   <span className="font-bold uppercase tracking-wider">Subtotal</span>
-                  <span className="font-mono">{formatCurrency(invoice.subtotal)}</span>
+                  <span className="font-mono text-gray-800">{formatCurrency(invoice.subtotal)}</span>
                 </div>
                 {invoice.discount > 0 && (
                   <div className="flex justify-between text-[9pt] text-red-500">
@@ -181,64 +180,69 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
                     <span className="font-mono">-{formatCurrency(invoice.discount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-[9pt] text-gray-500">
-                  <span className="font-bold uppercase tracking-wider">Sales Tax ({invoice.taxRate.toFixed(1)}%)</span>
-                  <span className="font-mono">{formatCurrency(invoice.tax)}</span>
-                </div>
+                {invoice.tax > 0 && (
+                  <div className="flex justify-between text-[9pt] text-gray-500">
+                    <span className="font-bold uppercase tracking-wider">Sales Tax ({invoice.taxRate.toFixed(1)}%)</span>
+                    <span className="font-mono text-gray-800">{formatCurrency(invoice.tax)}</span>
+                  </div>
+                )}
                 {invoice.freight > 0 && (
                   <div className="flex justify-between text-[9pt] text-gray-500">
                     <span className="font-bold uppercase tracking-wider">Freight</span>
-                    <span className="font-mono">{formatCurrency(invoice.freight)}</span>
+                    <span className="font-mono text-gray-800">{formatCurrency(invoice.freight)}</span>
                   </div>
                 )}
                 {invoice.otherChargesList && invoice.otherChargesList.length > 0 ? (
                   invoice.otherChargesList.map((charge, i) => (
                     <div key={i} className="flex justify-between text-[9pt] text-gray-500">
                       <span className="font-bold uppercase tracking-wider">{charge.description || 'Other Charge'}</span>
-                      <span className="font-mono">{formatCurrency(charge.amount)}</span>
+                      <span className="font-mono text-gray-800">{formatCurrency(charge.amount)}</span>
                     </div>
                   ))
                 ) : (
                   invoice.otherCharges > 0 && (
                     <div className="flex justify-between text-[9pt] text-gray-500">
                       <span className="font-bold uppercase tracking-wider">Other Charges</span>
-                      <span className="font-mono">{formatCurrency(invoice.otherCharges)}</span>
+                      <span className="font-mono text-gray-800">{formatCurrency(invoice.otherCharges)}</span>
                     </div>
                   )
                 )}
-                <div className="flex justify-between items-center pt-4 border-t-2 border-primary">
+                <div className="flex justify-between items-center pt-3 border-t-2 border-primary">
                   <span className="text-xs font-black text-gray-900 uppercase tracking-widest">Grand Total</span>
-                  <span className="text-2xl font-black text-primary">{formatCurrency(invoice.total)}</span>
+                  <span className="text-xl font-black text-primary font-mono">{formatCurrency(invoice.total)}</span>
                 </div>
                 
-                <div className="pt-4 space-y-2">
+                <div className="pt-3 space-y-1.5 border-t border-dashed border-gray-200">
                   <div className="flex justify-between text-[9pt] text-green-600 font-bold">
                     <span>AMOUNT PAID</span>
-                    <span>{formatCurrency(invoice.amountPaid)}</span>
+                    <span className="font-mono">{formatCurrency(invoice.amountPaid)}</span>
                   </div>
-                  <div className="flex justify-between text-[10pt] text-red-600 font-black border-t border-dashed border-gray-200 pt-2">
+                  <div className="flex justify-between text-[9.5pt] text-red-600 font-black">
                     <span>BALANCE DUE</span>
-                    <span>{formatCurrency(invoice.balance)}</span>
+                    <span className="font-mono">{formatCurrency(invoice.balance)}</span>
                   </div>
                 </div>
                 
-                <p className="text-[8pt] text-gray-400 text-right italic pt-2">All prices in {settings.currency}</p>
+                <p className="text-[7.5pt] text-gray-400 text-right italic pt-1">All amounts in {settings.currency}</p>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
 
-      {/* Terms & Conditions (Global) */}
-      {settings.terms.length > 0 && (
-        <div className="mb-6 bg-gray-50/50 rounded-xl p-4 border border-gray-100 break-inside-avoid">
-          <h3 className="text-[7pt] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">Terms & Conditions:</h3>
-          <div className="space-y-1">
-            {settings.terms.map((term, i) => (
-              <p key={i} className="text-[7pt] text-gray-600 leading-tight flex gap-2">
-                <span className="font-bold text-gray-400">{i + 1}.</span>
-                {term.text}
-              </p>
+      {/* Terms & Conditions - Rendered once with proper spacing */}
+      {termsToDisplay.length > 0 && (
+        <div className="mb-6 bg-pink-50/30 rounded-xl p-3.5 border border-pink-200/50 break-inside-avoid">
+          <h4 className="text-[7.5pt] font-black uppercase text-primary mb-1.5 tracking-widest flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+            Terms & Conditions
+          </h4>
+          <div className="space-y-1.5 text-[7.5pt] text-gray-700 leading-normal">
+            {termsToDisplay.map((term, i) => (
+              <div key={i} className="flex items-start gap-2 break-words">
+                <span className="font-bold text-primary/70 shrink-0">{i + 1}.</span>
+                <span className="flex-1">{term}</span>
+              </div>
             ))}
           </div>
         </div>

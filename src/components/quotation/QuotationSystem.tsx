@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Plus, Trash2, FileText, Send, Printer, Download, User, Save, History, Search, X, Package, Check, Landmark, FileDown, Receipt } from 'lucide-react';
+import { Plus, Trash2, FileText, Send, Printer, Download, User, UserPlus, Save, History, Search, X, Package, Check, Landmark, FileDown, Receipt, ShoppingBag } from 'lucide-react';
 import { formatCurrency, cn } from '../../lib/utils';
 import { PRODUCTS, MOCK_CLIENTS, INITIAL_SETTINGS, INITIAL_TERMS } from '../../constants';
-import { Quotation, CartItem, Client, Product, CompanySettings } from '../../types';
+import { Quotation, CartItem, Client, Product, CompanySettings, Invoice } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import QuotationPrintView from './QuotationPrintView';
 import ConfirmModal from '../layout/ConfirmModal';
@@ -22,10 +22,15 @@ interface QuotationSystemProps {
   quotations: Quotation[];
   onUpdateQuotations: (quotations: Quotation[]) => void;
   onConvertToInvoice?: (quotation: Quotation) => void;
+  onConvertToOrder?: (quotation: Quotation) => void;
+  invoices?: Invoice[];
   onAddAuditLog?: (action: string, details: string, category: any, type?: any) => void;
   language?: Language;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  clients?: Client[];
+  onUpdateClients?: (clients: Client[]) => void;
+  products?: Product[];
 }
 
 export default function QuotationSystem({ 
@@ -34,13 +39,22 @@ export default function QuotationSystem({
   quotations, 
   onUpdateQuotations,
   onConvertToInvoice,
+  onConvertToOrder,
+  invoices = [],
   onAddAuditLog,
   language = 'en',
   searchQuery,
-  setSearchQuery
+  setSearchQuery,
+  clients = [],
+  onUpdateClients,
+  products = []
 }: QuotationSystemProps) {
   const t = translations[language];
   const { addNotification } = useNotifications();
+
+  const availableClients = clients.length > 0 ? clients : MOCK_CLIENTS;
+  const availableProducts = products.length > 0 ? products : PRODUCTS;
+
   const [items, setItems] = useState<CartItem[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [quoteNumber, setQuoteNumber] = useState(`Q${Math.floor(100000 + Math.random() * 900000)}`);
@@ -49,9 +63,11 @@ export default function QuotationSystem({
   const [isProductPortalOpen, setIsProductPortalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [newClientFormData, setNewClientFormData] = useState({ name: '', phone: '', email: '', address: '', city: '' });
   const [quoteToDelete, setQuoteToDelete] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState('');
-  const [terms, setTerms] = useState<string[]>(companySettings.terms.map(t => t.text));
+  const [terms, setTerms] = useState<string[]>(companySettings.terms?.map(t => t.text) || []);
   const [selectedBankId, setSelectedBankId] = useState<string>(companySettings.bankDetails[0]?.id || '');
   const [newTerm, setNewTerm] = useState('');
   const [taxRate, setTaxRate] = useState(companySettings.defaultTaxRate);
@@ -304,7 +320,7 @@ export default function QuotationSystem({
                 text: "QUOTATION",
                 bold: true,
                 size: 48,
-                color: "f97316",
+                color: "f62440",
               }),
             ],
             alignment: AlignmentType.RIGHT,
@@ -354,7 +370,7 @@ export default function QuotationSystem({
           new Paragraph({ text: "" }),
           new Paragraph({
             children: [
-              new TextRun({ text: `GRAND TOTAL: ${formatCurrency(total)}`, bold: true, size: 32, color: "f97316" }),
+              new TextRun({ text: `GRAND TOTAL: ${formatCurrency(total)}`, bold: true, size: 32, color: "f62440" }),
             ],
             alignment: AlignmentType.RIGHT,
           }),
@@ -401,7 +417,7 @@ export default function QuotationSystem({
     URL.revokeObjectURL(url);
   };
 
-  const filteredPortalProducts = PRODUCTS.filter(p => 
+  const filteredPortalProducts = availableProducts.filter(p => 
     p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
     p.category.toLowerCase().includes(productSearch.toLowerCase())
   );
@@ -539,6 +555,26 @@ export default function QuotationSystem({
             )}
             {view === 'builder' && (
               <>
+                {onConvertToOrder && items.length > 0 && (
+                  <button 
+                    onClick={() => onConvertToOrder(currentQuotation)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold hover:bg-rose-100 transition-colors shadow-sm"
+                    title="Load items into POS cart for direct checkout"
+                  >
+                    <ShoppingBag size={14} />
+                    Push to POS Cart
+                  </button>
+                )}
+                {onConvertToInvoice && items.length > 0 && (
+                  <button 
+                    onClick={() => onConvertToInvoice(currentQuotation)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors shadow-sm"
+                    title="Generate official tax invoice from this quote"
+                  >
+                    <Receipt size={14} />
+                    Generate Invoice
+                  </button>
+                )}
                 <button 
                   onClick={handleSave}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
@@ -589,72 +625,103 @@ export default function QuotationSystem({
                     <td colSpan={6} className="px-4 py-12 text-center text-xs text-gray-400 italic">{t.noHistoryFound}</td>
                   </tr>
                 ) : (
-                  filteredQuotations.map((q) => (
-                    <tr key={q.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-[10px] text-gray-900">{q.quoteNumber}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-gray-700">{q.clientName}</td>
-                      <td className="px-4 py-3 text-[10px] text-gray-500">{q.date}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-primary">{formatCurrency(q.total)}</td>
-                      <td className="px-4 py-3">
-                        <select 
-                          value={q.status}
-                          onChange={(e) => handleStatusChange(q.id, e.target.value as any)}
-                          className={cn(
-                            "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border focus:outline-none transition-all",
-                            q.status === 'Won' ? "bg-green-100 text-green-700 border-green-200" :
-                            q.status === 'Approved' ? "bg-blue-100 text-blue-700 border-blue-200" :
-                            q.status === 'Rejected' ? "bg-red-100 text-red-700 border-red-200" :
-                            "bg-gray-100 text-gray-600 border-gray-200"
-                          )}
-                        >
-                          <option value="Draft">{t.draft}</option>
-                          <option value="Sent">{t.sent}</option>
-                          <option value="Approved">{t.accepted}</option>
-                          <option value="Won">{t.completed}</option>
-                          <option value="Rejected">{t.rejected}</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          {q.status === 'Won' && onConvertToInvoice && (
+                  filteredQuotations.map((q) => {
+                    const linkedInvoice = invoices.find(inv => inv.quotationId === q.id || inv.quotationNumber === q.quoteNumber);
+                    return (
+                      <tr key={q.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[10px] text-gray-900 font-bold">{q.quoteNumber}</span>
+                            {linkedInvoice && (
+                              <span className="px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 text-[8px] font-bold rounded-md">
+                                {linkedInvoice.invoiceNumber}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-bold text-gray-700">{q.clientName}</td>
+                        <td className="px-4 py-3 text-[10px] text-gray-500">{q.date}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-primary">{formatCurrency(q.total)}</td>
+                        <td className="px-4 py-3">
+                          <select 
+                            value={q.status}
+                            onChange={(e) => handleStatusChange(q.id, e.target.value as any)}
+                            className={cn(
+                              "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border focus:outline-none transition-all",
+                              q.status === 'Won' ? "bg-green-100 text-green-700 border-green-200" :
+                              q.status === 'Approved' ? "bg-blue-100 text-blue-700 border-blue-200" :
+                              q.status === 'Rejected' ? "bg-red-100 text-red-700 border-red-200" :
+                              "bg-gray-100 text-gray-600 border-gray-200"
+                            )}
+                          >
+                            <option value="Draft">{t.draft}</option>
+                            <option value="Sent">{t.sent}</option>
+                            <option value="Approved">{t.accepted}</option>
+                            <option value="Won">{t.completed}</option>
+                            <option value="Rejected">{t.rejected}</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-1.5">
+                            {onConvertToOrder && (
+                              <button 
+                                onClick={() => onConvertToOrder(q)}
+                                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                title="Convert to POS Order (Cart)"
+                              >
+                                <ShoppingBag size={14} />
+                              </button>
+                            )}
+                            {onConvertToInvoice && (
+                              <button 
+                                onClick={() => onConvertToInvoice(q)}
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-all"
+                                title={linkedInvoice ? "View/Update Invoice" : "Generate Invoice"}
+                              >
+                                <Receipt size={14} />
+                              </button>
+                            )}
                             <button 
-                              onClick={() => onConvertToInvoice(q)}
-                              className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-all"
-                              title="Generate Invoice"
+                              onClick={() => {
+                                setItems(q.items);
+                                const matchedClient = availableClients.find(c => c.id === q.clientId);
+                                setSelectedClient(matchedClient || {
+                                  id: q.clientId || 'GUEST',
+                                  name: q.clientName,
+                                  email: '',
+                                  phone: '',
+                                  address: '',
+                                  city: '',
+                                  creditLimit: 0,
+                                  isBlacklisted: false
+                                });
+                                setQuoteNumber(q.quoteNumber);
+                                setTerms(q.terms);
+                                setSelectedBankId(q.bankId || '');
+                                setTaxRate(q.taxRate);
+                                setDiscountRate(q.discountRate || 0);
+                                setDiscount(q.discountRate ? 0 : q.discount);
+                                setFreight(q.freight);
+                                setOtherChargesList(q.otherChargesList || []);
+                                setView('builder');
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-primary transition-colors"
+                              title="Edit / View"
                             >
-                              <Receipt size={14} />
+                              <FileText size={14} />
                             </button>
-                          )}
-                          <button 
-                            onClick={() => {
-                              setItems(q.items);
-                              setSelectedClient(MOCK_CLIENTS.find(c => c.id === q.clientId) || null);
-                              setQuoteNumber(q.quoteNumber);
-                              setTerms(q.terms);
-                              setSelectedBankId(q.bankId || '');
-                              setTaxRate(q.taxRate);
-                              setDiscountRate(q.discountRate || 0);
-                              setDiscount(q.discountRate ? 0 : q.discount);
-                              setFreight(q.freight);
-                              setOtherChargesList(q.otherChargesList || []);
-                              setView('builder');
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-primary transition-colors"
-                            title="Edit / View"
-                          >
-                            <FileText size={14} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteQuote(q.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            <button 
+                              onClick={() => handleDeleteQuote(q.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -664,47 +731,90 @@ export default function QuotationSystem({
             {/* Left: Client & Quick Add */}
             <div className="md:col-span-1 space-y-4">
               <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold text-gray-900 border-b border-gray-100 pb-2 flex items-center gap-2">
-                  <User size={14} className="text-primary" />
-                  Select Client
-                </h3>
-                <select 
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-primary"
-                  value={selectedClient?.id || ''}
-                  onChange={(e) => setSelectedClient(MOCK_CLIENTS.find(c => c.id === e.target.value) || null)}
-                >
-                  <option value="">Select a client...</option>
-                  {MOCK_CLIENTS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                {selectedClient && (
-                  <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
-                    <p className="text-[10px] font-bold text-primary uppercase mb-1">Client Info</p>
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                  <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                    <User size={14} className="text-primary" />
+                    Client Database
+                  </h3>
+                  <button 
+                    type="button"
+                    onClick={() => setIsAddClientModalOpen(true)}
+                    className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded-lg transition-colors"
+                    title="Add new client to database"
+                  >
+                    <UserPlus size={12} />
+                    + New
+                  </button>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Select Client</label>
+                  <select 
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    value={selectedClient?.id || ''}
+                    onChange={(e) => {
+                      const client = availableClients.find(c => c.id === e.target.value);
+                      setSelectedClient(client || null);
+                    }}
+                  >
+                    <option value="">-- Choose registered client --</option>
+                    {availableClients.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedClient ? (
+                  <div className="p-3 bg-pink-50/50 rounded-xl border border-pink-100 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-primary uppercase">Client Details</p>
+                      <button 
+                        onClick={() => setSelectedClient(null)} 
+                        className="text-[10px] text-gray-400 hover:text-red-500 font-bold"
+                      >
+                        Clear
+                      </button>
+                    </div>
                     <p className="text-xs font-bold text-gray-900">{selectedClient.name}</p>
-                    <p className="text-[10px] text-gray-500">{selectedClient.email}</p>
-                    <p className="text-[10px] text-gray-500">{selectedClient.phone}</p>
+                    <p className="text-[10px] text-gray-500 font-mono">ID: {selectedClient.id}</p>
+                    {selectedClient.phone && <p className="text-[10px] text-gray-600">📞 {selectedClient.phone}</p>}
+                    {selectedClient.email && <p className="text-[10px] text-gray-600">✉️ {selectedClient.email}</p>}
+                    {selectedClient.address && <p className="text-[10px] text-gray-500 truncate">📍 {selectedClient.address}</p>}
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-gray-50 rounded-xl border border-dashed border-gray-200 text-center text-[10px] text-gray-400">
+                    Select a client above or click <span className="font-bold text-primary cursor-pointer" onClick={() => setIsAddClientModalOpen(true)}>+ New</span> to register one.
                   </div>
                 )}
               </div>
 
               <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                  <h3 className="text-xs font-bold text-gray-900">Items</h3>
+                  <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                    <Package size={14} className="text-primary" />
+                    Quick Products
+                  </h3>
                   <button 
                     onClick={() => setIsProductPortalOpen(true)}
                     className="text-[10px] font-bold text-primary hover:underline"
                   >
-                    Open Portal
+                    Open Catalog
                   </button>
                 </div>
                 <div className="space-y-1 max-h-60 overflow-y-auto no-scrollbar">
-                  {PRODUCTS.slice(0, 8).map(p => (
+                  {availableProducts.slice(0, 10).map(p => (
                     <button 
                       key={p.id}
                       onClick={() => addItem(p)}
-                      className="w-full flex items-center justify-between p-1.5 hover:bg-gray-50 rounded-lg text-[11px] group transition-colors"
+                      className="w-full flex items-center justify-between p-2 hover:bg-pink-50/50 rounded-xl text-[11px] group transition-colors text-left border border-transparent hover:border-pink-100"
                     >
-                      <span className="text-gray-500 group-hover:text-primary font-medium truncate pr-2">{p.name}</span>
-                      <Plus size={12} className="text-gray-300 group-hover:text-primary shrink-0" />
+                      <div className="truncate pr-2">
+                        <p className="text-gray-700 group-hover:text-primary font-medium truncate">{p.name}</p>
+                        <p className="text-[9px] text-gray-400">{formatCurrency(p.price)}</p>
+                      </div>
+                      <Plus size={14} className="text-gray-300 group-hover:text-primary shrink-0" />
                     </button>
                   ))}
                 </div>
@@ -770,90 +880,131 @@ export default function QuotationSystem({
                 
                 <div className="p-6 bg-gray-50 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Terms and Bank Selection */}
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                        <FileText size={10} /> Saved Terms
-                      </label>
-                      <div className="flex flex-wrap gap-1">
-                        {companySettings.terms.map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => {
-                              if (!terms.includes(t.text)) {
-                                setTerms([...terms, t.text]);
-                              }
-                            }}
-                            className="px-2 py-1 bg-gray-100 hover:bg-primary/10 hover:text-primary rounded text-[9px] font-medium transition-colors border border-gray-200"
-                          >
-                            + {t.text.substring(0, 20)}{t.text.length > 20 ? '...' : ''}
-                          </button>
-                        ))}
+                  <div className="space-y-5">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-gray-600 uppercase flex items-center gap-1.5">
+                          <FileText size={12} className="text-primary" /> Terms & Conditions ({terms.length})
+                        </label>
+                        <span className="text-[9px] text-gray-400">Included on printed quotation</span>
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                        <FileText size={10} /> Current Quotation Terms
-                      </label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          value={newTerm}
-                          onChange={(e) => setNewTerm(e.target.value)}
-                          placeholder="Add custom term..."
-                          className="flex-1 px-3 py-1 bg-white border border-gray-200 rounded text-xs focus:outline-none focus:border-primary"
-                        />
-                        <div className="flex gap-1">
-                          <button 
-                            type="button"
-                            onClick={addTerm}
-                            title="Add to current quotation"
-                            className="p-1 bg-primary text-white rounded hover:bg-primary/90 transition-colors"
-                          >
-                            <Plus size={14} />
-                          </button>
-                          {onUpdateSettings && (
+                      {/* Add new custom term */}
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <textarea 
+                            rows={2}
+                            value={newTerm}
+                            onChange={(e) => setNewTerm(e.target.value)}
+                            placeholder="Type a condition (e.g. 50% advance required, delivery in 3 days)..."
+                            className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-primary resize-none shadow-2xs"
+                          />
+                          <div className="flex flex-col gap-1.5 justify-center">
                             <button 
                               type="button"
-                              onClick={() => saveTermGlobally(newTerm)}
+                              onClick={() => {
+                                if (newTerm.trim()) {
+                                  setTerms([...terms, newTerm.trim()]);
+                                  setNewTerm('');
+                                }
+                              }}
                               disabled={!newTerm.trim()}
-                              title="Save to company defaults"
-                              className="p-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50"
+                              title="Add to current quotation"
+                              className="px-3 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
                             >
-                              <Save size={14} />
+                              <Plus size={14} /> Add
                             </button>
-                          )}
+                            {onUpdateSettings && (
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  if (newTerm.trim()) {
+                                    saveTermGlobally(newTerm.trim());
+                                  }
+                                }}
+                                disabled={!newTerm.trim()}
+                                title="Save to company defaults"
+                                className="px-2.5 py-1 bg-green-600 text-white text-[9px] font-bold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                              >
+                                <Save size={10} /> Default
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="space-y-1 max-h-32 overflow-y-auto no-scrollbar">
+
+                      {/* Saved preset templates */}
+                      {companySettings.terms?.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase">Quick Presets (click to toggle):</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {companySettings.terms.map((t) => {
+                              const isSelected = terms.includes(t.text);
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setTerms(terms.filter(term => term !== t.text));
+                                    } else {
+                                      setTerms([...terms, t.text]);
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all border text-left",
+                                    isSelected 
+                                      ? "bg-pink-100 text-primary border-pink-300 font-bold" 
+                                      : "bg-white text-gray-600 hover:bg-gray-100 border-gray-200"
+                                  )}
+                                >
+                                  {isSelected ? '✓ ' : '+ '}
+                                  {t.text.length > 40 ? `${t.text.substring(0, 40)}...` : t.text}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Current terms list: readable, full text, no truncation! */}
+                      <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar pt-1">
                         {terms.map((term, i) => (
-                          <div key={i} className="flex items-center justify-between p-2 bg-white rounded border border-gray-100 group">
-                            <span className="text-[10px] text-gray-600 truncate flex-1">{term}</span>
+                          <div key={i} className="flex items-start justify-between p-2.5 bg-white rounded-xl border border-gray-200 hover:border-pink-200 transition-colors gap-2 group shadow-2xs">
+                            <div className="flex items-start gap-2 flex-1">
+                              <span className="text-[10px] font-bold text-primary shrink-0 mt-0.5">{i + 1}.</span>
+                              <p className="text-[11px] text-gray-700 leading-relaxed break-words">{term}</p>
+                            </div>
                             <button 
                               type="button"
                               onClick={() => removeTerm(i)}
-                              className="text-gray-300 hover:text-red-500 transition-colors"
+                              className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                              title="Remove term"
                             >
-                              <Trash2 size={12} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         ))}
+                        {terms.length === 0 && (
+                          <div className="text-center py-4 text-xs text-gray-400 italic bg-white rounded-xl border border-dashed border-gray-200">
+                            No terms added yet. Add terms above or select from presets.
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                        <Landmark size={10} /> Select Payment Bank
+                    <div className="space-y-2 pt-2 border-t border-gray-200/60">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1.5">
+                        <Landmark size={12} className="text-primary" /> Payment Bank Remittance
                       </label>
                       <select 
                         value={selectedBankId}
                         onChange={(e) => setSelectedBankId(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded text-xs focus:outline-none focus:border-primary"
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary shadow-2xs"
                       >
-                        <option value="">Select a bank...</option>
-                        {companySettings.bankDetails.map(bank => (
-                          <option key={bank.id} value={bank.id}>{bank.bankName} - {bank.accountNumber}</option>
+                        <option value="">Select remittance bank...</option>
+                        {companySettings.bankDetails?.map(bank => (
+                          <option key={bank.id} value={bank.id}>{bank.bankName} - {bank.accountNumber} ({bank.branch})</option>
                         ))}
                       </select>
                     </div>
@@ -1051,6 +1202,140 @@ export default function QuotationSystem({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Quick Add Client Modal */}
+      <AnimatePresence>
+        {isAddClientModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-pink-50/50">
+                <div className="flex items-center gap-2 text-primary font-bold">
+                  <UserPlus size={18} />
+                  <h3 className="text-sm font-bold text-gray-900">Add New Client</h3>
+                </div>
+                <button 
+                  onClick={() => setIsAddClientModalOpen(false)}
+                  className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newClientFormData.name.trim()) return;
+                  const newClient: Client = {
+                    id: `CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+                    name: newClientFormData.name.trim(),
+                    phone: newClientFormData.phone.trim(),
+                    email: newClientFormData.email.trim(),
+                    address: newClientFormData.address.trim(),
+                    city: newClientFormData.city.trim() || 'Colombo',
+                    creditLimit: 0,
+                    isBlacklisted: false
+                  };
+                  if (onUpdateClients) {
+                    onUpdateClients([...availableClients, newClient]);
+                  }
+                  setSelectedClient(newClient);
+                  onAddAuditLog?.('Client Created', `Client ${newClient.name} created from Quotation Portal`, 'clients', 'success');
+                  addNotification({
+                    title: 'Client Registered',
+                    message: `${newClient.name} has been added to the database and selected!`,
+                    type: 'success',
+                    category: 'system'
+                  });
+                  setNewClientFormData({ name: '', phone: '', email: '', address: '', city: '' });
+                  setIsAddClientModalOpen(false);
+                }}
+                className="p-5 space-y-4"
+              >
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Full Name *</label>
+                  <input 
+                    type="text" 
+                    required
+                    autoFocus
+                    placeholder="e.g. Acme Corporation"
+                    value={newClientFormData.name}
+                    onChange={e => setNewClientFormData({ ...newClientFormData, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Phone Number</label>
+                    <input 
+                      type="text" 
+                      placeholder="+94 77 123 4567"
+                      value={newClientFormData.phone}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, phone: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Email Address</label>
+                    <input 
+                      type="email" 
+                      placeholder="client@example.com"
+                      value={newClientFormData.email}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, email: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Street Address</label>
+                    <input 
+                      type="text" 
+                      placeholder="45 Main Road"
+                      value={newClientFormData.address}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, address: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">City</label>
+                    <input 
+                      type="text" 
+                      placeholder="Colombo"
+                      value={newClientFormData.city}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, city: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-gray-100">
+                  <button 
+                    type="button"
+                    onClick={() => setIsAddClientModalOpen(false)}
+                    className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    className="px-5 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+                  >
+                    Save & Select
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Print Portal */}
       <PrintPortal
         isOpen={showPrintPortal}

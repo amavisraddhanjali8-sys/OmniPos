@@ -14,7 +14,7 @@ const PAYMENT_METHODS = [
   { id: 'Cash', label: 'Cash', icon: Banknote, color: 'bg-green-500' },
   { id: 'Card', label: 'Card', icon: CreditCard, color: 'bg-blue-500' },
   { id: 'Bank Transfer', label: 'Bank', icon: Landmark, color: 'bg-purple-500' },
-  { id: 'Mobile Pay', label: 'Mobile', icon: Smartphone, color: 'bg-orange-500' },
+  { id: 'Mobile Pay', label: 'Mobile', icon: Smartphone, color: 'bg-pink-500' },
   { id: 'Credit', label: 'Credit', icon: User, color: 'bg-red-500' },
 ];
 

@@ -37,17 +37,57 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const t = translations[language];
   
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_products');
+      return saved ? JSON.parse(saved) : PRODUCTS;
+    } catch { return PRODUCTS; }
+  });
   const [categories, setCategories] = useState<string[]>(['Reloads', 'Bills', 'Printing', 'Accessories', 'Books', 'Stationery']);
-  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
+  const [clients, setClients] = useState<Client[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_clients');
+      return saved ? JSON.parse(saved) : MOCK_CLIENTS;
+    } catch { return MOCK_CLIENTS; }
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_suppliers');
+      return saved ? JSON.parse(saved) : MOCK_SUPPLIERS;
+    } catch { return MOCK_SUPPLIERS; }
+  });
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [orders, setOrders] = useState<Transaction[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [orders, setOrders] = useState<Transaction[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_orders');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_transactions');
+      return saved ? JSON.parse(saved) : MOCK_TRANSACTIONS;
+    } catch { return MOCK_TRANSACTIONS; }
+  });
+  const [quotations, setQuotations] = useState<Quotation[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_quotations');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_invoices');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_expenses');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccount[]>(INITIAL_ACCOUNTS);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -65,12 +105,54 @@ export default function App() {
     otherChargesList: { id: string; description: string; amount: number; }[];
     total: number;
   } | null>(null);
-  const [companySettings, setCompanySettings] = useState<CompanySettings>(INITIAL_SETTINGS);
+  const [companySettings, setCompanySettings] = useState<CompanySettings>(() => {
+    try {
+      const saved = localStorage.getItem('omni_settings');
+      return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
+    } catch { return INITIAL_SETTINGS; }
+  });
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(MOCK_AUDIT_LOGS);
   const [orderToRevise, setOrderToRevise] = useState<Transaction | null>(null);
   const [orderToDeleteId, setOrderToDeleteId] = useState<string | null>(null);
   const [isClearOrdersConfirmOpen, setIsClearOrdersConfirmOpen] = useState(false);
   const lastFocusedElement = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  // Persistence side effects
+  useEffect(() => {
+    try { localStorage.setItem('omni_clients', JSON.stringify(clients)); } catch {}
+  }, [clients]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_products', JSON.stringify(products)); } catch {}
+  }, [products]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_quotations', JSON.stringify(quotations)); } catch {}
+  }, [quotations]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_invoices', JSON.stringify(invoices)); } catch {}
+  }, [invoices]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_transactions', JSON.stringify(transactions)); } catch {}
+  }, [transactions]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_expenses', JSON.stringify(expenses)); } catch {}
+  }, [expenses]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_orders', JSON.stringify(orders)); } catch {}
+  }, [orders]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_suppliers', JSON.stringify(suppliers)); } catch {}
+  }, [suppliers]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_settings', JSON.stringify(companySettings)); } catch {}
+  }, [companySettings]);
 
   const addAuditLog = (action: string, details: string, category: AuditLog['category'], type: AuditLog['type'] = 'info') => {
     const newLog: AuditLog = {
@@ -476,6 +558,59 @@ export default function App() {
       type: 'info',
       category: 'sales'
     });
+  };
+
+  const handleConvertOrderToInvoice = (order: Transaction) => {
+    const existingInvoice = invoices.find(inv => inv.orderId === order.id || inv.orderNumber === order.id.slice(-6).toUpperCase());
+    if (existingInvoice) {
+      addNotification({
+        title: 'Invoice Exists',
+        message: `Tax Invoice #${existingInvoice.invoiceNumber} already exists for POS Order #${order.id.slice(-6).toUpperCase()}.`,
+        type: 'warning',
+        category: 'sales'
+      });
+      setActiveTab('invoices');
+      return;
+    }
+
+    const newInvoice: Invoice = {
+      id: Date.now().toString(),
+      invoiceNumber: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
+      orderId: order.id,
+      orderNumber: order.id.slice(-6).toUpperCase(),
+      clientId: order.clientId || 'GUEST',
+      clientName: order.clientName || 'Walk-in Customer',
+      date: order.date || new Date().toISOString(),
+      dueDate: order.date || new Date().toISOString(),
+      items: order.items || [],
+      subtotal: order.subtotal ?? (order.amount - (order.tax || 0) - (order.freight || 0) - (order.otherCharges || 0) + (order.discount || 0)),
+      tax: order.tax || 0,
+      taxRate: order.taxRate || 0,
+      discount: order.discount || 0,
+      discountRate: order.discountRate || 0,
+      freight: order.freight || 0,
+      otherCharges: order.otherCharges || 0,
+      otherChargesList: order.otherChargesList || [],
+      total: order.amount,
+      status: 'Paid',
+      amountPaid: order.amount,
+      balance: 0,
+      terms: ['Thank you for your business. Payment received in full.'],
+      stockReduced: true
+    };
+
+    setInvoices(prev => [newInvoice, ...prev]);
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, invoiceId: newInvoice.id, invoiceNumber: newInvoice.invoiceNumber } : o));
+    setTransactions(prev => prev.map(t => t.id === order.id ? { ...t, invoiceId: newInvoice.id, invoiceNumber: newInvoice.invoiceNumber } : t));
+
+    addAuditLog('Invoice Generated from POS Order', `Invoice #${newInvoice.invoiceNumber} created for Order #${order.id.slice(-6).toUpperCase()}`, 'sales', 'success');
+    addNotification({
+      title: 'Tax Invoice Generated',
+      message: `Tax Invoice #${newInvoice.invoiceNumber} created from POS Order #${order.id.slice(-6).toUpperCase()}.`,
+      type: 'success',
+      category: 'sales'
+    });
+    setActiveTab('invoices');
   };
 
   const handleCompleteOrder = (order: Transaction) => {
@@ -1013,8 +1148,31 @@ export default function App() {
             quotations={quotations}
             onUpdateQuotations={handleUpdateQuotations}
             onAddAuditLog={addAuditLog}
+            invoices={invoices}
+            onConvertToOrder={(quote) => {
+              setCartItems(quote.items);
+              const matchedClient = clients.find(c => c.id === quote.clientId);
+              setSelectedClient(matchedClient || {
+                id: quote.clientId || 'GUEST',
+                name: quote.clientName,
+                email: '',
+                phone: '',
+                address: '',
+                city: '',
+                creditLimit: 0,
+                isBlacklisted: false
+              });
+              addAuditLog('Quotation Converted to POS', `Quotation #${quote.quoteNumber} items loaded into POS Cart for checkout`, 'sales', 'info');
+              addNotification({
+                title: 'Quotation Loaded into POS',
+                message: `Quotation #${quote.quoteNumber} loaded into checkout cart.`,
+                type: 'success',
+                category: 'sales'
+              });
+              setActiveTab('pos');
+            }}
             onConvertToInvoice={(quote) => {
-              const existingInvoice = invoices.find(inv => inv.quotationId === quote.id);
+              const existingInvoice = invoices.find(inv => inv.quotationId === quote.id || inv.quotationNumber === quote.quoteNumber);
               if (existingInvoice) {
                 addNotification({
                   title: 'Invoice Exists',
@@ -1051,11 +1209,21 @@ export default function App() {
                 bankId: quote.bankId
               };
               setInvoices([newInvoice, ...invoices]);
+              addAuditLog('Invoice Generated from Quote', `Invoice #${newInvoice.invoiceNumber} created from Quote #${quote.quoteNumber}`, 'sales', 'success');
+              addNotification({
+                title: 'Invoice Generated',
+                message: `Invoice #${newInvoice.invoiceNumber} created from Quotation #${quote.quoteNumber}.`,
+                type: 'success',
+                category: 'sales'
+              });
               setActiveTab('invoices');
             }}
             language={language}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            clients={clients}
+            onUpdateClients={handleUpdateClients}
+            products={products}
           />
         )}
         {activeTab === 'invoices' && (
@@ -1080,6 +1248,9 @@ export default function App() {
             language={language}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            clients={clients}
+            onUpdateClients={handleUpdateClients}
+            products={products}
           />
         )}
         {activeTab === 'expenses' && (
@@ -1129,6 +1300,9 @@ export default function App() {
             language={language}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            quotations={quotations}
+            invoices={invoices}
+            orders={orders}
           />
         )}
         {activeTab === 'settings' && (
@@ -1236,6 +1410,8 @@ export default function App() {
             language={language}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            invoices={invoices}
+            onConvertToInvoice={handleConvertOrderToInvoice}
           />
         )}
 

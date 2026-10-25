@@ -39,7 +39,7 @@ interface ExpenseSystemProps {
   setSearchQuery: (query: string) => void;
 }
 
-const COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e', '#eab308', '#06b6d4', '#6366f1', '#ec4899', '#94a3b8'];
+const COLORS = ['#f62440', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e', '#eab308', '#06b6d4', '#6366f1', '#ec4899', '#94a3b8'];
 
 export default function ExpenseSystem({ 
   expenses, 

@@ -20,13 +20,14 @@ import {
   Edit2,
   Save,
   User,
+  UserPlus,
   Calendar,
   Landmark,
   Tag,
   Package
 } from 'lucide-react';
 import { formatCurrency, cn } from '../../lib/utils';
-import { Invoice, CompanySettings, Transaction } from '../../types';
+import { Invoice, CompanySettings, Transaction, Client, Product } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import InvoicePrintView from './InvoicePrintView';
 import ConfirmModal from '../layout/ConfirmModal';
@@ -47,20 +48,32 @@ interface InvoiceSystemProps {
   language?: Language;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  clients?: Client[];
+  onUpdateClients?: (clients: Client[]) => void;
+  products?: Product[];
 }
 
 export default function InvoiceSystem({ 
   companySettings, 
   invoices, 
   onUpdateInvoices, 
-  onUpdateTransactions,
+  onUpdateTransactions, 
   onAddAuditLog,
   language = 'en',
   searchQuery,
-  setSearchQuery
+  setSearchQuery,
+  clients = [],
+  onUpdateClients,
+  products = []
 }: InvoiceSystemProps) {
   const t = translations[language];
   const { addNotification } = useNotifications();
+  const availableClients = clients;
+  const [formClientName, setFormClientName] = useState('');
+  const [formClientId, setFormClientId] = useState('');
+  const [selectedFormClientId, setSelectedFormClientId] = useState('');
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [newClientFormData, setNewClientFormData] = useState({ name: '', phone: '', email: '', address: '', city: '' });
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -90,9 +103,16 @@ export default function InvoiceSystem({
 
   const filteredInvoices = invoices.filter(inv => {
     const matchesSearch = inv.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         inv.clientName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
-    return matchesSearch && matchesStatus;
+                         inv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (inv.quotationNumber && inv.quotationNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                         (inv.orderId && inv.orderId.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (!matchesSearch) return false;
+    
+    if (statusFilter === 'All') return true;
+    if (statusFilter === 'FromQuote') return !!(inv.quotationId || inv.quotationNumber);
+    if (statusFilter === 'FromOrder') return !!(inv.orderId || inv.orderNumber);
+    if (statusFilter === 'Direct') return !(inv.quotationId || inv.quotationNumber || inv.orderId || inv.orderNumber);
+    return inv.status === statusFilter;
   });
 
   const showNotification = (type: 'success' | 'error', message: string) => {
@@ -301,6 +321,9 @@ export default function InvoiceSystem({
                   setDiscountRate(0);
                   setFreight(0);
                   setOtherCharges(0);
+                  setFormClientName('');
+                  setFormClientId('');
+                  setSelectedFormClientId('');
                   setIsFormModalOpen(true); 
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 shadow-lg shadow-primary/20"
@@ -323,6 +346,9 @@ export default function InvoiceSystem({
                 className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary transition-all font-bold text-gray-600"
               >
                 <option value="All">{t.allStatus || 'All Status'}</option>
+                <option value="FromQuote">📄 From Quotations</option>
+                <option value="FromOrder">🛍️ From POS Orders</option>
+                <option value="Direct">✍️ Direct Invoices</option>
                 <option value="Draft">{t.draft}</option>
                 <option value="Sent">{t.sent}</option>
                 <option value="Paid">{t.paid}</option>
@@ -369,8 +395,22 @@ export default function InvoiceSystem({
                 {filteredInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-gray-50 transition-colors group">
                     <td className="px-6 py-4">
-                      <span className="text-sm font-black text-gray-900">{inv.invoiceNumber}</span>
-                      {inv.quotationId && <p className="text-[8px] text-gray-400 font-bold uppercase">Ref: {inv.quotationId}</p>}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-black text-gray-900">{inv.invoiceNumber}</span>
+                        {inv.quotationNumber && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 text-[8px] font-bold rounded">
+                            Quote: {inv.quotationNumber}
+                          </span>
+                        )}
+                        {inv.orderId && (
+                          <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[8px] font-bold rounded">
+                            Order: #{inv.orderId.slice(-6).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-gray-400 font-medium mt-0.5">
+                        {inv.items?.length || 0} items
+                      </p>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm font-bold text-gray-700">{inv.clientName}</span>
@@ -409,6 +449,9 @@ export default function InvoiceSystem({
                             setDiscountRate(inv.discountRate || 0);
                             setFreight(inv.freight);
                             setOtherCharges(inv.otherCharges);
+                            setFormClientName(inv.clientName);
+                            setFormClientId(inv.clientId);
+                            setSelectedFormClientId(inv.clientId);
                             setIsFormModalOpen(true); 
                           }}
                           className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
@@ -509,6 +552,9 @@ export default function InvoiceSystem({
                   setDiscountRate(selectedInvoice!.discountRate || 0);
                   setFreight(selectedInvoice!.freight);
                   setOtherCharges(selectedInvoice!.otherCharges);
+                  setFormClientName(selectedInvoice!.clientName);
+                  setFormClientId(selectedInvoice!.clientId);
+                  setSelectedFormClientId(selectedInvoice!.clientId);
                   setIsFormModalOpen(true); 
                 }}
                 className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
@@ -666,32 +712,69 @@ export default function InvoiceSystem({
                 </div>
 
                 <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[60vh] overflow-y-auto no-scrollbar">
-                  {/* Client Info */}
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-2 text-primary font-bold border-b border-gray-100 pb-2">
-                      <User size={16} />
-                      <h4 className="text-[10px] uppercase tracking-widest">Client Information</h4>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Client Name</label>
-                        <input 
-                          name="clientName"
-                          required
-                          defaultValue={editingInvoice?.clientName}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all"
-                          placeholder="e.g. John Doe"
-                        />
+                  {/* Client Info with Database Link */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                      <div className="flex items-center gap-2 text-primary font-bold">
+                        <User size={16} />
+                        <h4 className="text-[10px] uppercase tracking-widest">Client Selection</h4>
                       </div>
+                      <button 
+                        type="button"
+                        onClick={() => setIsAddClientModalOpen(true)}
+                        className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline bg-pink-50 hover:bg-pink-100 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        <UserPlus size={12} />
+                        + New Client
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Client ID</label>
-                        <input 
-                          name="clientId"
-                          required
-                          defaultValue={editingInvoice?.clientId}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all"
-                          placeholder="e.g. CUST-001"
-                        />
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Registered Clients Database</label>
+                        <select 
+                          value={selectedFormClientId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedFormClientId(val);
+                            const found = availableClients.find(c => c.id === val);
+                            if (found) {
+                              setFormClientName(found.name);
+                              setFormClientId(found.id);
+                            }
+                          }}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-primary transition-all"
+                        >
+                          <option value="">-- Choose client from database --</option>
+                          {availableClients.map(c => (
+                            <option key={c.id} value={c.id}>{c.name} {c.phone ? `(${c.phone})` : ''} - ID: {c.id}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Client Name *</label>
+                          <input 
+                            name="clientName"
+                            required
+                            value={formClientName}
+                            onChange={e => setFormClientName(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-primary transition-all"
+                            placeholder="e.g. John Doe"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Client ID *</label>
+                          <input 
+                            name="clientId"
+                            required
+                            value={formClientId}
+                            onChange={e => setFormClientId(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-primary transition-all"
+                            placeholder="e.g. CUST-001"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -986,6 +1069,141 @@ export default function InvoiceSystem({
                   Delete
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Add Client Modal */}
+      <AnimatePresence>
+        {isAddClientModalOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-pink-50/50">
+                <div className="flex items-center gap-2 text-primary font-bold">
+                  <UserPlus size={18} />
+                  <h3 className="text-sm font-bold text-gray-900">Add New Client to Database</h3>
+                </div>
+                <button 
+                  onClick={() => setIsAddClientModalOpen(false)}
+                  className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newClientFormData.name.trim()) return;
+                  const newClient: Client = {
+                    id: `CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+                    name: newClientFormData.name.trim(),
+                    phone: newClientFormData.phone.trim(),
+                    email: newClientFormData.email.trim(),
+                    address: newClientFormData.address.trim(),
+                    city: newClientFormData.city.trim() || 'Colombo',
+                    creditLimit: 0,
+                    isBlacklisted: false
+                  };
+                  if (onUpdateClients) {
+                    onUpdateClients([...availableClients, newClient]);
+                  }
+                  setFormClientName(newClient.name);
+                  setFormClientId(newClient.id);
+                  setSelectedFormClientId(newClient.id);
+                  onAddAuditLog?.('Client Created', `Client ${newClient.name} created from Invoice Portal`, 'clients', 'success');
+                  addNotification({
+                    title: 'Client Registered',
+                    message: `${newClient.name} added to the client database and applied to invoice!`,
+                    type: 'success',
+                    category: 'system'
+                  });
+                  setNewClientFormData({ name: '', phone: '', email: '', address: '', city: '' });
+                  setIsAddClientModalOpen(false);
+                }}
+                className="p-5 space-y-4"
+              >
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Full Name *</label>
+                  <input 
+                    type="text" 
+                    required
+                    autoFocus
+                    placeholder="e.g. Acme Corporation"
+                    value={newClientFormData.name}
+                    onChange={e => setNewClientFormData({ ...newClientFormData, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Phone Number</label>
+                    <input 
+                      type="text" 
+                      placeholder="+94 77 123 4567"
+                      value={newClientFormData.phone}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, phone: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Email Address</label>
+                    <input 
+                      type="email" 
+                      placeholder="client@example.com"
+                      value={newClientFormData.email}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, email: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Street Address</label>
+                    <input 
+                      type="text" 
+                      placeholder="45 Main Road"
+                      value={newClientFormData.address}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, address: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">City</label>
+                    <input 
+                      type="text" 
+                      placeholder="Colombo"
+                      value={newClientFormData.city}
+                      onChange={e => setNewClientFormData({ ...newClientFormData, city: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-gray-100">
+                  <button 
+                    type="button"
+                    onClick={() => setIsAddClientModalOpen(false)}
+                    className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    className="px-5 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+                  >
+                    Save & Select
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

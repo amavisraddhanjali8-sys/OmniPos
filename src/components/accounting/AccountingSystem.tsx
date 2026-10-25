@@ -48,7 +48,7 @@ import { MOCK_TRANSACTIONS, PRODUCTS } from '../../constants';
 import { formatCurrency } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { CompanySettings, Transaction, LedgerAccount, LedgerEntry } from '../../types';
+import { CompanySettings, Transaction, LedgerAccount, LedgerEntry, Quotation, Invoice } from '../../types';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
@@ -58,6 +58,7 @@ import ConfirmModal from '../layout/ConfirmModal';
 import { useNotifications } from '../../context/NotificationContext';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, Footer } from 'docx';
 import { saveAs } from 'file-saver';
+import AccountingDocumentView from './AccountingDocumentView';
 
 import { translations, Language } from '../../i18n';
 
@@ -73,6 +74,9 @@ interface AccountingSystemProps {
   ledgerEntries: LedgerEntry[];
   onUpdateLedgerAccounts: (accounts: LedgerAccount[]) => void;
   onUpdateLedgerEntries: (entries: LedgerEntry[]) => void;
+  quotations?: Quotation[];
+  invoices?: Invoice[];
+  orders?: Transaction[];
 }
 
 type AccountingTab = 'dashboard' | 'journals' | 'ledger' | 'statements' | 'accounts';
@@ -88,7 +92,10 @@ export default function AccountingSystem({
   ledgerAccounts,
   ledgerEntries,
   onUpdateLedgerAccounts,
-  onUpdateLedgerEntries
+  onUpdateLedgerEntries,
+  quotations = [],
+  invoices = [],
+  orders = []
 }: AccountingSystemProps) {
   const t = translations[language];
   const { addNotification } = useNotifications();
@@ -112,7 +119,7 @@ export default function AccountingSystem({
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const reportRef = React.useRef<HTMLDivElement>(null);
 
-  // Financial Data
+  // Financial Data - Real Dynamic Calculations from General Ledger
   const totalIncome = ledgerAccounts.filter(a => a.type === 'Revenue').reduce((sum, a) => sum + a.balance, 0);
   const totalExpenses = ledgerAccounts.filter(a => a.type === 'Expense').reduce((sum, a) => sum + a.balance, 0);
   const netProfit = totalIncome - totalExpenses;
@@ -121,6 +128,21 @@ export default function AccountingSystem({
   const totalCash = cashOnHand + bankBalance;
   const totalAR = ledgerAccounts.filter(a => a.id === 'acc-ar' || a.id.startsWith('acc-client-')).reduce((sum, a) => sum + a.balance, 0);
   const totalAP = ledgerAccounts.filter(a => a.id === 'acc-ap' || a.id.startsWith('acc-supplier-')).reduce((sum, a) => sum + a.balance, 0);
+
+  // Dynamic balance sheet and income statement breakdowns
+  const assetAccounts = useMemo(() => ledgerAccounts.filter(a => a.type === 'Asset'), [ledgerAccounts]);
+  const liabilityAccounts = useMemo(() => ledgerAccounts.filter(a => a.type === 'Liability'), [ledgerAccounts]);
+  const equityAccounts = useMemo(() => ledgerAccounts.filter(a => a.type === 'Equity'), [ledgerAccounts]);
+  const cogsAccount = useMemo(() => ledgerAccounts.find(a => a.id === 'acc-cogs' || a.name.toLowerCase().includes('cost of goods sold')), [ledgerAccounts]);
+  const cogsAmount = cogsAccount?.balance || 0;
+  const grossProfit = totalIncome - cogsAmount;
+  const grossMargin = totalIncome > 0 ? ((grossProfit / totalIncome) * 100).toFixed(1) : '0.0';
+  const netMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : '0.0';
+  const totalAssets = useMemo(() => assetAccounts.reduce((sum, a) => sum + a.balance, 0), [assetAccounts]);
+  const totalLiabilities = useMemo(() => liabilityAccounts.reduce((sum, a) => sum + a.balance, 0), [liabilityAccounts]);
+  const totalEquity = useMemo(() => equityAccounts.reduce((sum, a) => sum + a.balance, 0), [equityAccounts]);
+  const inventoryBalance = ledgerAccounts.find(a => a.id === 'acc-inventory')?.balance || 0;
+  const workingCapital = (totalCash + totalAR + inventoryBalance) - totalAP;
 
   // Dynamic Monthly Data for Charts
   const monthlyData = useMemo(() => {
@@ -170,7 +192,7 @@ export default function AccountingSystem({
       }
     });
 
-    const colors = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e', '#64748b'];
+    const colors = ['#f62440', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e', '#64748b'];
     return Object.entries(expensesByAccount)
       .map(([name, value], index) => ({
         name,
@@ -252,22 +274,45 @@ export default function AccountingSystem({
         const csvContent = csvMetadata + [headers, ...rows].map(e => e.join(",")).join("\n");
         downloadCSV(csvContent, filename);
       } else if (activeTab === 'statements') {
-        headers = ['Statement Type', 'Category', 'Description', 'Amount'];
+        headers = ['Statement Section', 'Account Code', 'Description', 'Amount'];
         const rows: any[] = [];
         
         // Profit & Loss
-        rows.push(['Profit & Loss', 'Revenue', 'Sales Revenue', totalIncome]);
-        rows.push(['Profit & Loss', 'Expenses', 'Cost of Goods Sold', totalExpenses * 0.7]);
-        rows.push(['Profit & Loss', 'Expenses', 'Operating Expenses', totalExpenses * 0.3]);
-        rows.push(['Profit & Loss', 'Summary', 'Net Income', netProfit]);
+        rows.push(['PROFIT & LOSS STATEMENT', '', '', '']);
+        rows.push(['Revenue', '4000', 'Sales Revenue', totalIncome]);
+        rows.push(['Cost of Goods Sold', cogsAccount?.code || '5000', cogsAccount?.name || 'Cost of Goods Sold', -cogsAmount]);
+        rows.push(['Gross Profit', '', 'Gross Margin', grossProfit]);
+        
+        ledgerAccounts.filter(a => a.type === 'Expense' && a.id !== cogsAccount?.id).forEach(exp => {
+          rows.push(['Operating Expenses', exp.code, `"${exp.name.replace(/"/g, '""')}"`, -exp.balance]);
+        });
+        rows.push(['Total Operating Expenses', '', 'Total Expenses', -totalExpenses]);
+        rows.push(['Net Profit / (Loss)', '', 'Net Income', netProfit]);
         
         rows.push([]); // Empty row
         
-        // Balance Sheet
-        rows.push(['Balance Sheet', 'Assets', 'Cash & Bank', 125400]);
-        rows.push(['Balance Sheet', 'Assets', 'Inventory', 45800]);
-        rows.push(['Balance Sheet', 'Liabilities', 'Accounts Payable', 12500]);
-        rows.push(['Balance Sheet', 'Equity', "Owner's Equity", 158700]);
+        // Balance Sheet - Assets
+        rows.push(['BALANCE SHEET - ASSETS', '', '', '']);
+        assetAccounts.forEach(asset => {
+          rows.push(['Current & Non-Current Assets', asset.code, `"${asset.name.replace(/"/g, '""')}"`, asset.balance]);
+        });
+        rows.push(['TOTAL ASSETS', '', 'Total Assets', totalAssets]);
+        
+        rows.push([]); // Empty row
+        
+        // Balance Sheet - Liabilities & Equity
+        rows.push(['BALANCE SHEET - LIABILITIES & EQUITY', '', '', '']);
+        liabilityAccounts.forEach(liab => {
+          rows.push(['Liabilities', liab.code, `"${liab.name.replace(/"/g, '""')}"`, liab.balance]);
+        });
+        rows.push(['Total Liabilities', '', 'Total Liabilities', totalLiabilities]);
+        
+        equityAccounts.forEach(eq => {
+          rows.push(['Equity', eq.code, `"${eq.name.replace(/"/g, '""')}"`, eq.balance]);
+        });
+        rows.push(['Equity', '3100', 'Current Period Retained Earnings (Net Profit)', netProfit]);
+        rows.push(['TOTAL EQUITY', '', 'Total Equity (with Current Net Profit)', totalEquity + netProfit]);
+        rows.push(['TOTAL LIABILITIES & EQUITY', '', 'Total Liabilities & Equity', totalLiabilities + totalEquity + netProfit]);
         
         const csvContent = csvMetadata + [headers, ...rows].map(e => e.join(",")).join("\n");
         downloadCSV(csvContent, filename);
@@ -377,7 +422,7 @@ export default function AccountingSystem({
         pdf.setTextColor(150);
         pdf.text(companySettings.name, margin, 8);
         pdf.text(`Report: ${activeTab.toUpperCase()}`, pdfWidth - margin, 8, { align: 'right' });
-        pdf.setDrawColor(249, 115, 22); // primary color
+        pdf.setDrawColor(246, 36, 64); // brand primary pink color (#f62440)
         pdf.setLineWidth(0.5);
         pdf.line(margin, 10, pdfWidth - margin, 10);
 
@@ -438,7 +483,7 @@ export default function AccountingSystem({
                   width: { size: 100, type: WidthType.PERCENTAGE },
                   borders: {
                     top: { style: BorderStyle.NONE },
-                    bottom: { style: BorderStyle.SINGLE, size: 1, color: "f97316" },
+                    bottom: { style: BorderStyle.SINGLE, size: 1, color: "f62440" },
                     left: { style: BorderStyle.NONE },
                     right: { style: BorderStyle.NONE },
                   },
@@ -447,7 +492,7 @@ export default function AccountingSystem({
                       children: [
                         new TableCell({
                           width: { size: 60, type: WidthType.PERCENTAGE },
-                          borders: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "f97316" } },
+                          borders: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "f62440" } },
                           children: [
                             new Paragraph({
                               children: [
@@ -463,11 +508,11 @@ export default function AccountingSystem({
                         }),
                         new TableCell({
                           width: { size: 40, type: WidthType.PERCENTAGE },
-                          borders: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "f97316" } },
+                          borders: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "f62440" } },
                           children: [
                             new Paragraph({
                               children: [
-                                new TextRun({ text: "ACCOUNTING REPORT", bold: true, size: 20, color: "f97316" }),
+                                new TextRun({ text: "ACCOUNTING REPORT", bold: true, size: 20, color: "f62440" }),
                               ],
                               alignment: AlignmentType.RIGHT,
                             }),
@@ -569,6 +614,114 @@ export default function AccountingSystem({
                     ],
                   }))
                 ),
+              ] : activeTab === 'statements' ? [
+                // Statement Title Row
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph({ children: [new TextRun({ text: "PROFIT & LOSS STATEMENT", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph({ children: [new TextRun({ text: "Code", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph({ children: [new TextRun({ text: "Amount", bold: true, color: "ffffff" })] })] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Gross Revenue / Sales Income", bold: true })] })] }),
+                    new TableCell({ children: [new Paragraph("4000")] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(totalIncome))] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph("Cost of Goods Sold (COGS)")] }),
+                    new TableCell({ children: [new Paragraph(cogsAccount?.code || "5000")] }),
+                    new TableCell({ children: [new Paragraph(`(${formatCurrency(cogsAmount)})`)] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: "GROSS PROFIT MARGIN", bold: true, color: "f62440" })] })] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph("")] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: formatCurrency(grossProfit), bold: true, color: "f62440" })] })] }),
+                  ],
+                }),
+                ...ledgerAccounts.filter(a => a.type === 'Expense' && a.id !== cogsAccount?.id).map(exp => new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph(exp.name)] }),
+                    new TableCell({ children: [new Paragraph(exp.code)] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(exp.balance))] }),
+                  ],
+                })),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "f9fafb" }, children: [new Paragraph({ children: [new TextRun({ text: "TOTAL OPERATING EXPENSES", bold: true })] })] }),
+                    new TableCell({ shading: { fill: "f9fafb" }, children: [new Paragraph("")] }),
+                    new TableCell({ shading: { fill: "f9fafb" }, children: [new Paragraph({ children: [new TextRun({ text: formatCurrency(totalExpenses), bold: true })] })] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph({ children: [new TextRun({ text: "NET OPERATING PROFIT / (LOSS)", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph("")] }),
+                    new TableCell({ shading: { fill: "f62440" }, children: [new Paragraph({ children: [new TextRun({ text: formatCurrency(netProfit), bold: true, color: "ffffff" })] })] }),
+                  ],
+                }),
+                // Balance Sheet Header
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "BALANCE SHEET: ASSETS", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "Code", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "Balance", bold: true, color: "ffffff" })] })] }),
+                  ],
+                }),
+                ...assetAccounts.map(a => new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph(a.name)] }),
+                    new TableCell({ children: [new Paragraph(a.code)] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(a.balance))] }),
+                  ],
+                })),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: "TOTAL ASSETS", bold: true, color: "f62440" })] })] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph("")] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: formatCurrency(totalAssets), bold: true, color: "f62440" })] })] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "BALANCE SHEET: LIABILITIES & EQUITY", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "Code", bold: true, color: "ffffff" })] })] }),
+                    new TableCell({ shading: { fill: "201e1c" }, children: [new Paragraph({ children: [new TextRun({ text: "Balance", bold: true, color: "ffffff" })] })] }),
+                  ],
+                }),
+                ...liabilityAccounts.map(l => new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph(l.name)] }),
+                    new TableCell({ children: [new Paragraph(l.code)] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(l.balance))] }),
+                  ],
+                })),
+                ...equityAccounts.map(eq => new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph(eq.name)] }),
+                    new TableCell({ children: [new Paragraph(eq.code)] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(eq.balance))] }),
+                  ],
+                })),
+                new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph("Current Period Retained Earnings (Net Profit)")] }),
+                    new TableCell({ children: [new Paragraph("3100")] }),
+                    new TableCell({ children: [new Paragraph(formatCurrency(netProfit))] }),
+                  ],
+                }),
+                new TableRow({
+                  children: [
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: "TOTAL LIABILITIES & EQUITY", bold: true, color: "f62440" })] })] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph("")] }),
+                    new TableCell({ shading: { fill: "fff0f3" }, children: [new Paragraph({ children: [new TextRun({ text: formatCurrency(totalLiabilities + totalEquity + netProfit), bold: true, color: "f62440" })] })] }),
+                  ],
+                }),
               ] : [
                 new TableRow({
                   children: [
@@ -1038,15 +1191,15 @@ export default function AccountingSystem({
                           <AreaChart data={monthlyData}>
                             <defs>
                               <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#f97316" stopOpacity={0.1}/>
-                                <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#f62440" stopOpacity={0.1}/>
+                                <stop offset="95%" stopColor="#f62440" stopOpacity={0}/>
                               </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={5} />
                             <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
                             <Tooltip />
-                            <Area type="monotone" dataKey="income" stroke="#f97316" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                            <Area type="monotone" dataKey="income" stroke="#f62440" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
                             <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fillOpacity={0} />
                           </AreaChart>
                         </ResponsiveContainer>
@@ -1112,15 +1265,15 @@ export default function AccountingSystem({
                     <AreaChart data={monthlyData}>
                       <defs>
                         <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#f62440" stopOpacity={0.1}/>
+                          <stop offset="95%" stopColor="#f62440" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={5} />
                       <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="income" stroke="#f97316" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                      <Area type="monotone" dataKey="income" stroke="#f62440" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
                       <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fillOpacity={0} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -1978,98 +2131,251 @@ export default function AccountingSystem({
         onDownload={() => handleGeneratePDF(false)}
         isGeneratingPDF={isGeneratingPDF}
       >
-        <div ref={reportRef} className="bg-white p-8" data-print-root>
-          {/* Re-render the active tab content for printing */}
-          <div className="mb-8 border-b-2 border-primary pb-4">
-            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">{activeTab} Report</h1>
-            <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">{companySettings.name}</p>
+        <div ref={reportRef} className="bg-white p-8 max-w-[1024px] mx-auto text-gray-900" data-print-root>
+          {/* Executive Document Branded Header */}
+          <div className="border-b-2 border-primary pb-6 mb-6">
+            <div className="flex justify-between items-start gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-white font-black text-2xl shadow-md border border-primary/20">
+                  {companySettings.logo ? (
+                    <img src={companySettings.logo} alt="Logo" className="w-full h-full object-contain rounded-xl" referrerPolicy="no-referrer" />
+                  ) : (
+                    companySettings.name.charAt(0)
+                  )}
+                </div>
+                <div>
+                  <h1 className="text-xl font-black text-gray-900 uppercase tracking-tight">{companySettings.name}</h1>
+                  <p className="text-xs text-gray-500 max-w-sm whitespace-pre-line leading-relaxed">{companySettings.address}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-gray-500 font-bold mt-1">
+                    {companySettings.phones?.map((p, i) => (
+                      <span key={i}>Tel: <span className="font-normal text-gray-700">{p}</span></span>
+                    ))}
+                    {companySettings.email && <span>Email: <span className="font-normal text-gray-700">{companySettings.email}</span></span>}
+                    {companySettings.website && <span className="text-primary font-bold">{companySettings.website}</span>}
+                  </div>
+                  {companySettings.taxId && (
+                    <p className="text-[9px] font-black text-gray-900 uppercase tracking-wider mt-0.5">
+                      TAX ID / REG: <span className="font-mono text-primary">{companySettings.taxId}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right space-y-1">
+                <span className="px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-[9px] font-black uppercase tracking-wider">
+                  Official Financial Document
+                </span>
+                <h2 className="text-lg font-black text-gray-900 uppercase tracking-tight mt-1">
+                  {activeTab === 'statements' ? 'Financial Statements & Audit' :
+                   activeTab === 'ledger' ? 'General Ledger Report' :
+                   activeTab === 'journals' ? 'General Journal Entries' :
+                   activeTab === 'accounts' ? 'Chart of Accounts Schedule' : 'Executive Accounting Report'}
+                </h2>
+                <div className="text-[9px] text-gray-500 space-y-0.5 font-bold uppercase tracking-wider">
+                  <p>As Of: <span className="font-mono text-gray-800 font-normal">{new Date().toLocaleDateString()}</span></p>
+                  <p>Doc Ref: <span className="font-mono text-gray-800 font-normal">ACC-{activeTab.slice(0, 3).toUpperCase()}-{new Date().getFullYear()}</span></p>
+                  <p>Currency: <span className="font-mono text-primary">{companySettings.currency}</span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Executive KPI Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8 break-inside-avoid">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Total Revenue</p>
+              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalIncome)}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Gross Profit</p>
+              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(grossProfit)}</p>
+              <span className="text-[7.5px] font-bold text-primary">{grossMargin}% margin</span>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Operating Exp.</p>
+              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalExpenses)}</p>
+            </div>
+            <div className="p-3 bg-primary/5 rounded-xl border border-primary/20">
+              <p className="text-[8px] font-black text-primary uppercase tracking-wider">Net Income</p>
+              <p className={cn("text-xs font-black mt-0.5", netProfit >= 0 ? "text-green-700" : "text-red-600")}>
+                {formatCurrency(netProfit)}
+              </p>
+              <span className="text-[7.5px] font-bold text-gray-500">{netMargin}% net</span>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Total Assets</p>
+              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalAssets)}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Working Capital</p>
+              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(workingCapital)}</p>
+            </div>
           </div>
           
+          {/* Dashboard View */}
           {activeTab === 'dashboard' && (
-            <div className="space-y-8">
-              {/* Stats Summary */}
-              <div className="grid grid-cols-4 gap-4">
-                {[
-                  { label: 'Total Income', value: totalIncome },
-                  { label: 'Total Expenses', value: totalExpenses },
-                  { label: 'Net Profit', value: netProfit },
-                  { label: 'Cash on Hand', value: ledgerAccounts.find(a => a.id === 'acc-cash')?.balance || 0 },
-                ].map((stat, i) => (
-                  <div key={i} className="p-4 border border-gray-100 rounded-xl">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{stat.label}</p>
-                    <h3 className="text-lg font-bold text-gray-900">{formatCurrency(stat.value)}</h3>
+            <div className="space-y-6 break-inside-avoid">
+              <div className="border border-gray-200 rounded-xl p-5 bg-white space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gray-800 border-b border-gray-100 pb-2">
+                  Account Balances & Liquidity Position
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Cash on Hand</span>
+                    <p className="font-bold text-gray-900">{formatCurrency(cashOnHand)}</p>
                   </div>
-                ))}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Bank Balance</span>
+                    <p className="font-bold text-gray-900">{formatCurrency(bankBalance)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Accounts Receivable</span>
+                    <p className="font-bold text-blue-700">{formatCurrency(totalAR)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Accounts Payable</span>
+                    <p className="font-bold text-amber-700">{formatCurrency(totalAP)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Ledger Audit Trail */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-gray-700">Recent Ledger Activity</h4>
+                </div>
+                <table className="w-full text-left text-[9pt]">
+                  <thead className="bg-gray-50/50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Date</th>
+                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Description</th>
+                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Account</th>
+                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-right text-gray-400">Debit</th>
+                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-right text-gray-400">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {ledgerEntries.slice(0, 10).map((e) => (
+                      <tr key={e.id}>
+                        <td className="px-4 py-2 text-gray-500 font-mono text-[8pt]">{new Date(e.date).toLocaleDateString()}</td>
+                        <td className="px-4 py-2 font-bold text-gray-800">{e.description}</td>
+                        <td className="px-4 py-2 text-gray-600">{e.accountName}</td>
+                        <td className="px-4 py-2 text-right font-bold text-gray-900">{e.debit > 0 ? formatCurrency(e.debit) : '-'}</td>
+                        <td className="px-4 py-2 text-right font-bold text-gray-900">{e.credit > 0 ? formatCurrency(e.credit) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
 
+          {/* Journals Print View */}
           {activeTab === 'journals' && (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b-2 border-gray-200">
-                  <th className="py-2 text-[10px] font-bold text-gray-400 uppercase">Date</th>
-                  <th className="py-2 text-[10px] font-bold text-gray-400 uppercase">Description</th>
-                  <th className="py-2 text-[10px] font-bold text-gray-400 uppercase text-right">Debit</th>
-                  <th className="py-2 text-[10px] font-bold text-gray-400 uppercase text-right">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEntries.map((e) => {
-                  const account = ledgerAccounts.find(a => a.id === e.accountId);
-                  return (
-                    <tr key={e.id} className="border-b border-gray-100">
-                      <td className="py-2 text-[10px] text-gray-500">{new Date(e.date).toLocaleDateString()}</td>
-                      <td className="py-2">
-                        <p className="text-xs font-bold text-gray-700">{e.description}</p>
-                        <p className="text-[8px] text-gray-400 uppercase font-black tracking-widest">{account?.name || 'Unknown'}</p>
-                      </td>
-                      <td className="py-2 text-xs font-bold text-right">
-                        {e.debit > 0 ? formatCurrency(e.debit) : '-'}
-                      </td>
-                      <td className="py-2 text-xs font-bold text-right">
-                        {e.credit > 0 ? formatCurrency(e.credit) : '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="space-y-4">
+              <table className="w-full text-left border-collapse border border-gray-200 rounded-xl overflow-hidden text-[9pt]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Description</th>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Reference</th>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Account</th>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider text-right">Debit</th>
+                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider text-right">Credit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredEntries.map((e) => {
+                    const account = ledgerAccounts.find(a => a.id === e.accountId);
+                    return (
+                      <tr key={e.id} className="hover:bg-gray-50/50">
+                        <td className="px-3 py-2 text-gray-600 font-mono text-[8pt]">{new Date(e.date).toLocaleDateString()}</td>
+                        <td className="px-3 py-2 font-bold text-gray-800">{e.description}</td>
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-[8pt] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                            {e.referenceId || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {account ? `${account.name} (${account.code})` : e.accountName || 'Unknown'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-900">
+                          {e.debit > 0 ? formatCurrency(e.debit) : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-900">
+                          {e.credit > 0 ? formatCurrency(e.credit) : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 font-black text-[9pt] border-t-2 border-gray-300">
+                  <tr>
+                    <td colSpan={4} className="px-3 py-2 text-gray-700 uppercase">Total Reconciled Ledger Footing</td>
+                    <td className="px-3 py-2 text-right text-gray-900">
+                      {formatCurrency(filteredEntries.reduce((sum, e) => sum + e.debit, 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-900">
+                      {formatCurrency(filteredEntries.reduce((sum, e) => sum + e.credit, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
 
+          {/* Ledger Accounts Print View */}
           {activeTab === 'ledger' && (
-            <div className="space-y-8">
+            <div className="space-y-6">
               {ledgerAccounts.map(acc => {
                 const accEntries = ledgerEntries.filter(e => e.accountId === acc.id);
                 if (accEntries.length === 0) return null;
+                const totalDebit = accEntries.reduce((sum, e) => sum + e.debit, 0);
+                const totalCredit = accEntries.reduce((sum, e) => sum + e.credit, 0);
+
                 return (
-                  <div key={acc.id} className="space-y-2">
-                    <h3 className="text-sm font-bold text-gray-900 border-b border-gray-200 pb-1">
-                      {acc.code} - {acc.name}
-                    </h3>
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="py-1 text-[9px] font-bold text-gray-400 uppercase">Date</th>
-                          <th className="py-1 text-[9px] font-bold text-gray-400 uppercase">Description</th>
-                          <th className="py-1 text-[9px] font-bold text-gray-400 uppercase text-right">Debit</th>
-                          <th className="py-1 text-[9px] font-bold text-gray-400 uppercase text-right">Credit</th>
+                  <div key={acc.id} className="border border-gray-200 rounded-xl overflow-hidden break-inside-avoid">
+                    <div className="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-white border border-gray-200 text-gray-700 font-mono font-bold text-[8pt] rounded">
+                          {acc.code}
+                        </span>
+                        <h3 className="text-xs font-black uppercase text-gray-900">{acc.name}</h3>
+                        <span className="text-[8pt] text-gray-400 font-bold uppercase">({acc.type})</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8pt] text-gray-500 font-bold uppercase">Closing Balance: </span>
+                        <span className="text-xs font-black text-gray-900">{formatCurrency(Math.abs(acc.balance))}</span>
+                      </div>
+                    </div>
+                    <table className="w-full text-left text-[8.5pt]">
+                      <thead className="bg-white border-b border-gray-100 text-[7.5pt] font-black uppercase text-gray-400">
+                        <tr>
+                          <th className="px-3 py-1.5">Date</th>
+                          <th className="px-3 py-1.5">Description</th>
+                          <th className="px-3 py-1.5">Reference</th>
+                          <th className="px-3 py-1.5 text-right">Debit</th>
+                          <th className="px-3 py-1.5 text-right">Credit</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-gray-50">
                         {accEntries.map(e => (
-                          <tr key={e.id} className="border-b border-gray-50">
-                            <td className="py-1 text-[9px] text-gray-500">{new Date(e.date).toLocaleDateString()}</td>
-                            <td className="py-1 text-[9px] text-gray-700">{e.description}</td>
-                            <td className="py-1 text-[9px] font-bold text-right">
-                              {e.debit > 0 ? formatCurrency(e.debit) : '-'}
-                            </td>
-                            <td className="py-1 text-[9px] font-bold text-right">
-                              {e.credit > 0 ? formatCurrency(e.credit) : '-'}
-                            </td>
+                          <tr key={e.id}>
+                            <td className="px-3 py-1.5 font-mono text-gray-500">{new Date(e.date).toLocaleDateString()}</td>
+                            <td className="px-3 py-1.5 font-bold text-gray-800">{e.description}</td>
+                            <td className="px-3 py-1.5 font-mono text-[7.5pt] text-gray-500">{e.referenceId || '-'}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-gray-900">{e.debit > 0 ? formatCurrency(e.debit) : '-'}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-gray-900">{e.credit > 0 ? formatCurrency(e.credit) : '-'}</td>
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot className="bg-gray-50/70 border-t border-gray-200 text-[8pt] font-black">
+                        <tr>
+                          <td colSpan={3} className="px-3 py-1.5 text-gray-600 uppercase">Account Activity Total</td>
+                          <td className="px-3 py-1.5 text-right text-gray-900">{formatCurrency(totalDebit)}</td>
+                          <td className="px-3 py-1.5 text-right text-gray-900">{formatCurrency(totalCredit)}</td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 );
@@ -2077,38 +2383,243 @@ export default function AccountingSystem({
             </div>
           )}
 
+          {/* Full Financial Statements View (Profit & Loss, Balance Sheet, Trial Balance) */}
           {activeTab === 'statements' && (
-            <div className="space-y-12">
-              {/* Profit & Loss */}
-              <div>
-                <h2 className="text-lg font-black text-gray-900 uppercase tracking-tight mb-4 border-b-2 border-gray-200 pb-2">Profit & Loss Statement</h2>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Revenue</p>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                      <span className="text-xs font-bold text-gray-700">Sales Revenue</span>
-                      <span className="text-xs font-bold text-gray-900">{formatCurrency(totalIncome)}</span>
+            <div className="space-y-8">
+              {/* Part 1: Comprehensive Profit & Loss Statement */}
+              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
+                <div className="bg-primary/5 px-4 py-3 border-b border-primary/20 flex justify-between items-center">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary">
+                    1. Profit & Loss Statement (Income Statement)
+                  </h3>
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Period Ended {new Date().toLocaleDateString()}</span>
+                </div>
+                <div className="p-4 space-y-4 text-xs">
+                  {/* Revenue */}
+                  <div>
+                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Operating Revenue</h4>
+                    <div className="flex justify-between items-center py-1">
+                      <span className="font-bold text-gray-700">Gross Sales Revenue</span>
+                      <span className="font-mono font-bold text-gray-900">{formatCurrency(totalIncome)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-t border-gray-100 font-black text-gray-900">
+                      <span>Total Revenue</span>
+                      <span className="font-mono">{formatCurrency(totalIncome)}</span>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expenses</p>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                      <span className="text-xs font-bold text-gray-700">Cost of Goods Sold</span>
-                      <span className="text-xs font-bold text-gray-900">{formatCurrency(totalExpenses * 0.7)}</span>
+
+                  {/* COGS */}
+                  <div>
+                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Cost of Goods Sold (COGS)</h4>
+                    <div className="flex justify-between items-center py-1 text-gray-700">
+                      <span>Direct Product Material & Purchase Costs</span>
+                      <span className="font-mono font-bold">({formatCurrency(cogsAmount)})</span>
                     </div>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                      <span className="text-xs font-bold text-gray-700">Operating Expenses</span>
-                      <span className="text-xs font-bold text-gray-900">{formatCurrency(totalExpenses * 0.3)}</span>
+                    <div className="flex justify-between items-center py-2 px-3 bg-rose-50/70 border border-rose-100 rounded-lg text-primary font-black mt-2">
+                      <span className="uppercase tracking-wider text-[10px]">Gross Profit Margin</span>
+                      <span className="font-mono text-sm">{formatCurrency(grossProfit)}</span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center py-4 bg-gray-50 px-4 rounded-xl">
-                    <span className="text-sm font-black text-gray-900 uppercase tracking-tight">Net Profit</span>
-                    <span className={cn("text-sm font-black", netProfit >= 0 ? "text-green-600" : "text-red-600")}>
+
+                  {/* Operating Expenses */}
+                  <div>
+                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Operating Expenses</h4>
+                    {ledgerAccounts.filter(a => a.type === 'Expense' && a.id !== cogsAccount?.id).map(exp => (
+                      <div key={exp.id} className="flex justify-between items-center py-1 text-gray-700">
+                        <span>{exp.name} <span className="text-gray-400 font-mono text-[9px]">({exp.code})</span></span>
+                        <span className="font-mono font-bold text-gray-900">{formatCurrency(exp.balance)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center py-1.5 border-t border-gray-100 font-black text-gray-900">
+                      <span>Total Operating Expenses</span>
+                      <span className="font-mono">{formatCurrency(totalExpenses)}</span>
+                    </div>
+                  </div>
+
+                  {/* Net Income Callout */}
+                  <div className="p-3 bg-gray-900 text-white rounded-xl flex justify-between items-center">
+                    <div>
+                      <p className="text-[9px] text-gray-400 font-black uppercase tracking-wider">Net Operating Income</p>
+                      <p className="text-[8px] text-gray-400">Total Revenue - Total Cost & Expenses</p>
+                    </div>
+                    <span className={cn("text-base font-black font-mono", netProfit >= 0 ? "text-green-400" : "text-red-400")}>
                       {formatCurrency(netProfit)}
                     </span>
                   </div>
                 </div>
               </div>
+
+              {/* Part 2: Comprehensive Balance Sheet */}
+              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+                    2. Balance Sheet (Statement of Financial Position)
+                  </h3>
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">As of {new Date().toLocaleDateString()}</span>
+                </div>
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                  {/* Assets Column */}
+                  <div className="space-y-3">
+                    <h4 className="text-[9px] font-black text-blue-700 uppercase tracking-widest border-b border-blue-200 pb-1">
+                      Assets
+                    </h4>
+                    {assetAccounts.map(a => (
+                      <div key={a.id} className="flex justify-between items-center py-1 text-gray-700">
+                        <span>{a.name} <span className="text-gray-400 font-mono text-[9px]">({a.code})</span></span>
+                        <span className="font-mono font-bold text-gray-900">{formatCurrency(a.balance)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center py-2 px-3 bg-blue-50/80 border border-blue-100 rounded-lg font-black text-blue-900">
+                      <span className="uppercase text-[9px] tracking-wider">Total Assets</span>
+                      <span className="font-mono text-xs">{formatCurrency(totalAssets)}</span>
+                    </div>
+                  </div>
+
+                  {/* Liabilities & Equity Column */}
+                  <div className="space-y-3">
+                    <h4 className="text-[9px] font-black text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1">
+                      Liabilities & Equity
+                    </h4>
+                    {liabilityAccounts.map(l => (
+                      <div key={l.id} className="flex justify-between items-center py-1 text-gray-700">
+                        <span>{l.name} <span className="text-gray-400 font-mono text-[9px]">({l.code})</span></span>
+                        <span className="font-mono font-bold text-gray-900">{formatCurrency(l.balance)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center py-1 border-t border-gray-100 font-black text-gray-900">
+                      <span>Total Liabilities</span>
+                      <span className="font-mono">{formatCurrency(totalLiabilities)}</span>
+                    </div>
+
+                    <h4 className="text-[9px] font-black text-purple-700 uppercase tracking-widest border-b border-purple-200 pb-1 pt-2">
+                      Equity & Retained Earnings
+                    </h4>
+                    {equityAccounts.map(eq => (
+                      <div key={eq.id} className="flex justify-between items-center py-1 text-gray-700">
+                        <span>{eq.name} <span className="text-gray-400 font-mono text-[9px]">({eq.code})</span></span>
+                        <span className="font-mono font-bold text-gray-900">{formatCurrency(eq.balance)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center py-1 text-gray-700">
+                      <span>Current Year Retained Earnings (Net Profit)</span>
+                      <span className="font-mono font-bold text-gray-900">{formatCurrency(netProfit)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 px-3 bg-purple-50/80 border border-purple-100 rounded-lg font-black text-purple-900">
+                      <span className="uppercase text-[9px] tracking-wider">Total Liabilities & Equity</span>
+                      <span className="font-mono text-xs">{formatCurrency(totalLiabilities + totalEquity + netProfit)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Part 3: Trial Balance Table */}
+              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+                    3. Trial Balance Schedule
+                  </h3>
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Balanced Ledger Audit</span>
+                </div>
+                <table className="w-full text-left text-[8.5pt]">
+                  <thead className="bg-gray-50/50 border-b border-gray-200 text-[7.5pt] font-black uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Code</th>
+                      <th className="px-3 py-2">Account Name</th>
+                      <th className="px-3 py-2">Classification</th>
+                      <th className="px-3 py-2 text-right">Debit Balance</th>
+                      <th className="px-3 py-2 text-right">Credit Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {ledgerAccounts.map(acc => {
+                      const isDebit = acc.type === 'Asset' || acc.type === 'Expense';
+                      const debitVal = isDebit ? Math.max(0, acc.balance) : 0;
+                      const creditVal = !isDebit ? Math.max(0, acc.balance) : 0;
+                      return (
+                        <tr key={acc.id} className="hover:bg-gray-50/50">
+                          <td className="px-3 py-1.5 font-mono text-gray-500">{acc.code}</td>
+                          <td className="px-3 py-1.5 font-bold text-gray-800">{acc.name}</td>
+                          <td className="px-3 py-1.5 text-gray-500">{acc.type}</td>
+                          <td className="px-3 py-1.5 text-right font-mono font-bold text-gray-900">
+                            {debitVal > 0 ? formatCurrency(debitVal) : '-'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono font-bold text-gray-900">
+                            {creditVal > 0 ? formatCurrency(creditVal) : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-black text-[8.5pt]">
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2 text-gray-700 uppercase">Trial Balance Totals</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-900">
+                        {formatCurrency(ledgerAccounts.filter(a => a.type === 'Asset' || a.type === 'Expense').reduce((s, a) => s + Math.max(0, a.balance), 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-900">
+                        {formatCurrency(ledgerAccounts.filter(a => a.type !== 'Asset' && a.type !== 'Expense').reduce((s, a) => s + Math.max(0, a.balance), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Part 4: Official Signatures Section */}
+              <div className="pt-8 border-t border-gray-200 grid grid-cols-3 gap-6 text-center break-inside-avoid">
+                <div className="space-y-10">
+                  <div className="h-10 border-b border-gray-300"></div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-900 uppercase">Prepared By</p>
+                    <p className="text-[8px] text-gray-400">Chief Accountant</p>
+                  </div>
+                </div>
+                <div className="space-y-10">
+                  <div className="h-10 border-b border-gray-300"></div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-900 uppercase">Audited & Verified</p>
+                    <p className="text-[8px] text-gray-400">Internal Audit Department</p>
+                  </div>
+                </div>
+                <div className="space-y-10">
+                  <div className="h-10 border-b border-gray-300"></div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-900 uppercase">Approved By</p>
+                    <p className="text-[8px] text-gray-400">Managing Director / CEO</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Accounts Print View */}
+          {activeTab === 'accounts' && (
+            <div className="space-y-4">
+              <table className="w-full text-left border-collapse border border-gray-200 rounded-xl overflow-hidden text-[9pt]">
+                <thead className="bg-gray-50 border-b border-gray-200 text-[8pt] font-black uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2">Code</th>
+                    <th className="px-3 py-2">Account Name</th>
+                    <th className="px-3 py-2">Category</th>
+                    <th className="px-3 py-2 text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {ledgerAccounts.map(acc => (
+                    <tr key={acc.id}>
+                      <td className="px-3 py-2 font-mono text-gray-600">{acc.code}</td>
+                      <td className="px-3 py-2 font-bold text-gray-900">{acc.name}</td>
+                      <td className="px-3 py-2">
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[8pt] font-bold">
+                          {acc.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-gray-900">
+                        {formatCurrency(acc.balance)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

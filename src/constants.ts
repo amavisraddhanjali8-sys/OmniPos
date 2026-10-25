@@ -28,7 +28,7 @@ export const INITIAL_SETTINGS: CompanySettings = {
     { id: 'b2', bankName: 'Commercial Bank', accountNumber: '1090023456', branch: 'Kollupitiya', accountHolder: 'OmniConnect Pvt Ltd' }
   ],
   currency: 'LKR',
-  logo: 'https://api.dicebear.com/7.x/initials/svg?seed=OC&backgroundColor=f97316',
+  logo: 'https://api.dicebear.com/7.x/initials/svg?seed=OC&backgroundColor=f62440',
   terms: [
     { id: '1', text: 'Payment is due within 30 days.' },
     { id: '2', text: 'Goods once sold are not returnable.' },

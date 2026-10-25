@@ -57,7 +57,7 @@ export default function Lobby({ companySettings, setActiveTab, lowStockCount = 0
       title: t.quotations,
       description: t.quotationsDescription,
       icon: FileText,
-      color: 'bg-orange-500',
+      color: 'bg-pink-500',
       pattern: 'triangles'
     },
     {
