@@ -15,6 +15,7 @@ import {
   Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { exportToPdf } from '../../lib/pdf-utils';
 import { cn } from '../../lib/utils';
 
 interface PrintPortalProps {
@@ -24,7 +25,6 @@ interface PrintPortalProps {
   subtitle?: string;
   children: React.ReactNode;
   onDownload?: () => void;
-  isGeneratingPDF?: boolean;
 }
 
 export default function PrintPortal({ 
@@ -32,12 +32,12 @@ export default function PrintPortal({
   onClose, 
   title, 
   subtitle, 
-  children, 
+  children,
   onDownload,
-  isGeneratingPDF = false
 }: PrintPortalProps) {
   const [zoom, setZoom] = useState(100);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [paperSize, setPaperSize] = useState<'A4' | 'Letter' | 'Legal' | 'Receipt'>('A4');
   const [orientation, setOrientation] = useState<'Portrait' | 'Landscape'>('Portrait');
   const previewRef = useRef<HTMLDivElement>(null);
@@ -54,6 +54,25 @@ export default function PrintPortal({
     // We can't directly control the browser print dialog settings from JS,
     // but we can apply classes that @media print will pick up.
     window.print();
+  };
+
+  const handlePdfDownload = async () => {
+    if (onDownload) {
+      onDownload();
+      return;
+    }
+    if (!previewRef.current) return;
+    setIsExportingPdf(true);
+    try {
+      await exportToPdf(previewRef.current, `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`, {
+        orientation: orientation === 'Landscape' ? 'landscape' : 'portrait',
+        format: 'a4'
+      });
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 10, 200));
@@ -170,20 +189,23 @@ export default function PrintPortal({
               </button>
             </div>
 
-            {onDownload && (
-              <button 
-                onClick={onDownload}
-                disabled={isGeneratingPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all disabled:opacity-50"
-              >
-                {isGeneratingPDF ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                Download PDF
-              </button>
-            )}
-            
+            <button 
+              onClick={handlePdfDownload}
+              disabled={isExportingPdf}
+              className="flex items-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all shadow-md disabled:opacity-50"
+              title="Export high-resolution PDF"
+            >
+              {isExportingPdf ? (
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              {isExportingPdf ? 'Generating PDF...' : 'Download PDF'}
+            </button>
+
             <button 
               onClick={handlePrint}
-              className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all"
+              className="flex items-center gap-2 px-5 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all"
             >
               <Printer size={14} />
               Print Document
@@ -293,7 +315,7 @@ export default function PrintPortal({
               className="bg-white shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] rounded-sm origin-top"
               ref={previewRef}
             >
-              <div className="w-full h-full p-8">
+              <div className="w-full h-full flex justify-center">
                 {children}
               </div>
             </motion.div>

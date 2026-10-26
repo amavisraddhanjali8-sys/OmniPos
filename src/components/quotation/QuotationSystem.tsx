@@ -6,9 +6,6 @@ import { Quotation, CartItem, Client, Product, CompanySettings, Invoice } from '
 import { motion, AnimatePresence } from 'motion/react';
 import QuotationPrintView from './QuotationPrintView';
 import ConfirmModal from '../layout/ConfirmModal';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
 import PrintPortal from '../layout/PrintPortal';
 import { useNotifications } from '../../context/NotificationContext';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } from 'docx';
@@ -75,7 +72,6 @@ export default function QuotationSystem({
   const [discount, setDiscount] = useState(0);
   const [freight, setFreight] = useState(0);
   const [otherChargesList, setOtherChargesList] = useState<{ id: string; description: string; amount: number; }[]>([]);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   const filteredQuotations = quotations.filter(q => 
@@ -202,78 +198,6 @@ export default function QuotationSystem({
     setTimeout(() => {
       window.print();
     }, 100);
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!printRef.current) return;
-    setIsGeneratingPDF(true);
-    try {
-      const element = printRef.current;
-      
-      // Temporary style to ensure all elements are visible and formatted correctly for capture
-      const originalStyle = element.style.cssText;
-      element.style.width = '1024px'; // Fixed width for consistent capture
-      element.style.padding = '40px';
-      element.style.backgroundColor = '#ffffff';
-      element.style.boxSizing = 'border-box';
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024,
-        onclone: (clonedDoc) => {
-          handleHtml2CanvasClone(clonedDoc);
-          
-          // Ensure the cloned element has the same fixed width
-          const clonedElement = clonedDoc.querySelector('[data-print-root]') as HTMLElement || clonedDoc.body.firstChild as HTMLElement;
-          if (clonedElement) {
-            clonedElement.style.width = '1024px';
-            clonedElement.style.padding = '40px';
-            clonedElement.style.boxSizing = 'border-box';
-          }
-        }
-      });
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      // Use canvas directly for better compatibility and performance
-      const imgProps = pdf.getImageProperties(canvas);
-      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      // Add first page
-      pdf.addImage(canvas, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if needed
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(canvas, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`quotation_${quoteNumber}.pdf`);
-      
-      // Restore original style
-      element.style.cssText = originalStyle;
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      addNotification({
-        title: 'PDF Error',
-        message: 'Failed to generate PDF. Please try the Print option instead.',
-        type: 'error',
-        category: 'system'
-      });
-    } finally {
-      setIsGeneratingPDF(false);
-    }
   };
 
   const handleDownloadCSV = () => {
@@ -422,39 +346,7 @@ export default function QuotationSystem({
     p.category.toLowerCase().includes(productSearch.toLowerCase())
   );
 
-  const handleSendWhatsApp = async () => {
-    // Try to share file if supported
-    if (navigator.share && navigator.canShare) {
-      try {
-        const element = printRef.current;
-        if (element) {
-          const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          
-          // Use canvas directly for better compatibility and performance
-          const imgProps = pdf.getImageProperties(canvas);
-          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-          
-          pdf.addImage(canvas, 'PNG', 0, 0, pdfWidth, pdfHeight);
-          const blob = pdf.output('blob');
-          const file = new File([blob], `quotation_${quoteNumber}.pdf`, { type: 'application/pdf' });
-          
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: `Quotation ${quoteNumber}`,
-              text: `Please find the quotation from ${companySettings.name} attached.`,
-            });
-            return;
-          }
-        }
-      } catch (e) {
-        console.error('Share failed', e);
-      }
-    }
-
-    // Fallback to text message
+  const handleSendWhatsApp = () => {
     const itemsList = items.map(i => `- ${i.name} (${i.quantity}x): ${formatCurrency(i.price * i.quantity)}`).join('\n');
     const message = `*Quotation from ${companySettings.name}*\n\n` +
       `Quote #: ${quoteNumber}\n` +
@@ -467,39 +359,7 @@ export default function QuotationSystem({
     window.open(url, '_blank');
   };
 
-  const handleSendEmail = async () => {
-    // Try to share file if supported
-    if (navigator.share && navigator.canShare) {
-      try {
-        const element = printRef.current;
-        if (element) {
-          const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          
-          // Use canvas directly for better compatibility and performance
-          const imgProps = pdf.getImageProperties(canvas);
-          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-          
-          pdf.addImage(canvas, 'PNG', 0, 0, pdfWidth, pdfHeight);
-          const blob = pdf.output('blob');
-          const file = new File([blob], `quotation_${quoteNumber}.pdf`, { type: 'application/pdf' });
-          
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: `Quotation ${quoteNumber}`,
-              text: `Please find the quotation from ${companySettings.name} attached.`,
-            });
-            return;
-          }
-        }
-      } catch (e) {
-        console.error('Share failed', e);
-      }
-    }
-
-    // Fallback to mailto
+  const handleSendEmail = () => {
     const itemsList = items.map(i => `- ${i.name} (${i.quantity}x): ${formatCurrency(i.price * i.quantity)}`).join('\n');
     const subject = `Quotation ${quoteNumber} from ${companySettings.name}`;
     const body = `Dear ${selectedClient?.name || 'Customer'},\n\nPlease find the quotation details below:\n\n` +
@@ -1342,8 +1202,6 @@ export default function QuotationSystem({
         onClose={() => setShowPrintPortal(false)}
         title="Quotation Document"
         subtitle={`Quotation #${quoteNumber}`}
-        onDownload={handleDownloadPDF}
-        isGeneratingPDF={isGeneratingPDF}
       >
         <div ref={printRef} className="bg-white">
           <QuotationPrintView 

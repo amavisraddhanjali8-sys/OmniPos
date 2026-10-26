@@ -4,9 +4,6 @@ import { formatCurrency, cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../../context/NotificationContext';
 import { CartItem, Transaction, CompanySettings, Client } from '../../types';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
 import PrintPortal from '../layout/PrintPortal';
 import Barcode from 'react-barcode';
 
@@ -66,7 +63,6 @@ export default function CheckoutModal({
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '', address: '' });
   
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedPrinter, setSelectedPrinter] = useState('Receipt Printer (80mm)');
   const [isPrinterConnecting, setIsPrinterConnecting] = useState(false);
@@ -165,43 +161,6 @@ export default function CheckoutModal({
     setIsSuccess(false);
     setAmountPaid('');
     setCompletedOrder(null);
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!receiptRef.current || !completedOrder) return;
-    setIsGeneratingPDF(true);
-    try {
-      const element = receiptRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-          handleHtml2CanvasClone(clonedDoc);
-        }
-      });
-      
-      const pdf = new jsPDF('p', 'mm', [80, 200]); // Receipt size
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      
-      // Use canvas directly for better compatibility and performance
-      const imgProps = pdf.getImageProperties(canvas);
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      pdf.addImage(canvas, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`receipt_${completedOrder.id.toUpperCase()}.pdf`);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      addNotification({
-        title: 'PDF Error',
-        message: 'Failed to generate PDF.',
-        type: 'error',
-        category: 'system'
-      });
-    } finally {
-      setIsGeneratingPDF(false);
-    }
   };
 
   const handlePrint = () => {
@@ -334,7 +293,7 @@ export default function CheckoutModal({
                 </div>
               </div>
 
-              {/* Hidden Receipt for PDF/Print - Using absolute positioning instead of hidden to ensure html2canvas can capture it */}
+              {/* Hidden Receipt for Print */}
               <div className="absolute -left-[9999px] top-0 pointer-events-none">
                 <div ref={receiptRef} className="w-[80mm] p-6 bg-white text-black font-mono">
                   <div className="text-center space-y-1 mb-4 border-b border-dashed border-black pb-4">
@@ -423,22 +382,13 @@ export default function CheckoutModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+              <div className="w-full max-w-sm">
                 <button 
                   onClick={() => setShowPrintPortal(true)}
-                  disabled={isGeneratingPDF}
-                  className="flex items-center justify-center gap-3 py-4 bg-white border-2 border-gray-100 rounded-2xl text-sm font-black text-gray-700 hover:bg-gray-50 hover:border-gray-200 transition-all"
+                  className="w-full flex items-center justify-center gap-3 py-4 bg-primary text-white rounded-2xl text-sm font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
                 >
                   <Printer size={18} />
-                  PRINT PREVIEW
-                </button>
-                <button 
-                  onClick={handleDownloadPDF}
-                  disabled={isGeneratingPDF}
-                  className="flex items-center justify-center gap-3 py-4 bg-primary text-white rounded-2xl text-sm font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
-                >
-                  {isGeneratingPDF ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={18} />}
-                  PDF RECEIPT
+                  PRINT RECEIPT PREVIEW
                 </button>
               </div>
 
@@ -873,8 +823,6 @@ export default function CheckoutModal({
         onClose={() => setShowPrintPortal(false)}
         title="Order Receipt"
         subtitle={`Order #${completedOrder?.id.toUpperCase()}`}
-        onDownload={handleDownloadPDF}
-        isGeneratingPDF={isGeneratingPDF}
       >
         <div ref={receiptRef} className="bg-white p-8 max-w-[400px] mx-auto" data-print-root>
           <div className="text-center space-y-4 mb-8">

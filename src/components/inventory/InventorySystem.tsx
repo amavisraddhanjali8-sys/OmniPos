@@ -24,7 +24,6 @@ import StockPurchaseModal from './StockPurchaseModal';
 import Barcode from 'react-barcode';
 import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
-import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
 import { useNotifications } from '../../context/NotificationContext';
 import { translations, Language } from '../../i18n';
 import ConfirmModal from '../layout/ConfirmModal';
@@ -85,9 +84,6 @@ export default function InventorySystem({
       const canvas = await html2canvas(barcodeRef.current, {
         backgroundColor: '#ffffff',
         scale: 3,
-        onclone: (clonedDoc) => {
-          handleHtml2CanvasClone(clonedDoc);
-        }
       });
       const link = document.createElement('a');
       link.download = `barcode-${selectedBarcodeProduct.barcode || selectedBarcodeProduct.id}.png`;

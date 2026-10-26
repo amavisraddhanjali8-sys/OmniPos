@@ -49,16 +49,12 @@ import { formatCurrency } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { CompanySettings, Transaction, LedgerAccount, LedgerEntry, Quotation, Invoice } from '../../types';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
-
 import PrintPortal from '../layout/PrintPortal';
+import AccountingDocumentView from './AccountingDocumentView';
 import ConfirmModal from '../layout/ConfirmModal';
 import { useNotifications } from '../../context/NotificationContext';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, Footer } from 'docx';
 import { saveAs } from 'file-saver';
-import AccountingDocumentView from './AccountingDocumentView';
 
 import { translations, Language } from '../../i18n';
 
@@ -111,9 +107,7 @@ export default function AccountingSystem({
   const [showPrintPortal, setShowPrintPortal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingAccount, setEditingAccount] = useState<LedgerAccount | null>(null);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
@@ -216,7 +210,7 @@ export default function AccountingSystem({
             while expenses peaked in ${highestExpenseMonth.name} at ${formatCurrency(highestExpenseMonth.expense)}.`;
   }, [monthlyData]);
 
-  const handleExport = (format: 'pdf' | 'csv' | 'download-pdf') => {
+  const handleExport = (format: 'print' | 'csv') => {
     if (format === 'csv') {
       let data: any[] = [];
       let headers: string[] = [];
@@ -317,151 +311,14 @@ export default function AccountingSystem({
         const csvContent = csvMetadata + [headers, ...rows].map(e => e.join(",")).join("\n");
         downloadCSV(csvContent, filename);
       }
-    } else if (format === 'pdf') {
+    } else if (format === 'print') {
       setShowPrintPortal(true);
-    } else if (format === 'download-pdf') {
-      handleGeneratePDF(false);
-    }
-  };
-
-  const handleGeneratePDF = async (isPreview: boolean = false) => {
-    if (!reportRef.current) return;
-    setIsGeneratingPDF(true);
-    try {
-      const element = reportRef.current;
-      
-      // Temporary style to ensure all elements are visible and formatted correctly for capture
-      const originalStyle = element.style.cssText;
-      element.style.width = '1024px'; // Fixed width for consistent capture
-      element.style.padding = '40px';
-      element.style.backgroundColor = '#ffffff';
-      element.style.boxSizing = 'border-box';
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024,
-        onclone: (clonedDoc) => {
-          handleHtml2CanvasClone(clonedDoc);
-          
-          // Ensure the cloned element has the same fixed width
-          const clonedElement = clonedDoc.querySelector('[data-print-root]') as HTMLElement || clonedDoc.body.firstChild as HTMLElement;
-          if (clonedElement) {
-            clonedElement.style.width = '1024px';
-            clonedElement.style.padding = '40px';
-            clonedElement.style.boxSizing = 'border-box';
-          }
-
-          const printHeader = clonedDoc.querySelector('.print\\:block') as HTMLElement;
-          if (printHeader) {
-            printHeader.style.display = 'block';
-            printHeader.classList.remove('hidden');
-          }
-
-          const printFooter = clonedDoc.querySelector('.print\\:block.border-t') as HTMLElement;
-          if (printFooter) {
-            printFooter.style.display = 'block';
-            printFooter.classList.remove('hidden');
-          }
-
-          const hideInPrint = clonedDoc.querySelectorAll('.print\\:hidden');
-          hideInPrint.forEach(el => {
-            (el as HTMLElement).style.display = 'none';
-          });
-
-          // Fix any remaining oklab colors just in case
-          const allElements = clonedDoc.getElementsByTagName('*');
-          for (let i = 0; i < allElements.length; i++) {
-            const el = allElements[i] as HTMLElement;
-            if (el.style.color && (el.style.color.includes('oklab') || el.style.color.includes('oklch'))) {
-              el.style.color = '#111827';
-            }
-            if (el.style.backgroundColor && (el.style.backgroundColor.includes('oklab') || el.style.backgroundColor.includes('oklch'))) {
-              el.style.backgroundColor = 'transparent';
-            }
-          }
-        }
-      });
-
-      // Restore original style
-      element.style.cssText = originalStyle;
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgProps = pdf.getImageProperties(canvas);
-      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
-      const margin = 10; // mm
-
-      // Add first page
-      pdf.addImage(canvas, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-      
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if needed
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(canvas, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      // Add page numbers and header/footer to each page
-      const totalPages = pdf.internal.pages.length - 1;
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-        
-        // Header
-        pdf.setFontSize(8);
-        pdf.setTextColor(150);
-        pdf.text(companySettings.name, margin, 8);
-        pdf.text(`Report: ${activeTab.toUpperCase()}`, pdfWidth - margin, 8, { align: 'right' });
-        pdf.setDrawColor(246, 36, 64); // brand primary pink color (#f62440)
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, 10, pdfWidth - margin, 10);
-
-        // Footer
-        pdf.line(margin, pdfHeight - 10, pdfWidth - margin, pdfHeight - 10);
-        pdf.text(
-          `Page ${i} of ${totalPages} - Confidential - ${new Date().toLocaleDateString()}`,
-          pdfWidth / 2,
-          pdfHeight - 5,
-          { align: 'center' }
-        );
-      }
-      
-      if (isPreview) {
-        const blob = pdf.output('blob');
-        const url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
-        setShowPreview(true);
-        onAddAuditLog?.('Report Previewed', `Financial report previewed as PDF`, 'accounting');
-      } else {
-        pdf.save(`accounting_report_${activeTab}_${new Date().toISOString().split('T')[0]}.pdf`);
-        onAddAuditLog?.('Report Downloaded', `Financial report downloaded as PDF`, 'accounting');
-      }
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      addNotification({
-        title: 'PDF Error',
-        message: 'Failed to generate PDF. Please try the Print option instead.',
-        type: 'error',
-        category: 'system'
-      });
-    } finally {
-      setIsGeneratingPDF(false);
     }
   };
 
   const handleDownloadDOCX = async () => {
     if (!reportRef.current) return;
-    setIsGeneratingPDF(true);
+    setIsExporting(true);
     
     try {
       const doc = new Document({
@@ -762,12 +619,8 @@ export default function AccountingSystem({
         category: 'system'
       });
     } finally {
-      setIsGeneratingPDF(false);
+      setIsExporting(false);
     }
-  };
-
-  const handleDownloadPDF = async () => {
-    handleGeneratePDF(false);
   };
 
 
@@ -960,7 +813,7 @@ export default function AccountingSystem({
     <div className="flex-1 bg-gray-50 p-4 overflow-y-auto print:p-0 print:bg-white">
       <div ref={reportRef} data-print-root className="max-w-7xl mx-auto space-y-6 print:space-y-0 print:max-w-none print:p-[20mm]">
         
-        {/* Print Header (Visible only when printing or in PDF) */}
+        {/* Print Header (Visible only when printing) */}
         <div className="hidden print:block border-b-2 border-primary pb-6 mb-8 w-full">
           <div className="grid grid-cols-[1fr_auto] gap-8 items-start">
             <div className="flex gap-6 items-start">
@@ -1012,7 +865,7 @@ export default function AccountingSystem({
           </div>
         </div>
 
-        {/* Report Summary Section (Visible in print/PDF) */}
+        {/* Report Summary Section (Visible in print) */}
         <div className="hidden print:block mb-8 border-b border-gray-100 pb-8 w-full">
           <table className="w-full border-collapse">
             <tbody>
@@ -1078,24 +931,22 @@ export default function AccountingSystem({
                 <Download size={14} />
                 Export
               </button>
-              <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-100 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
                 <button 
-                  onClick={() => handleExport('download-pdf')} 
-                  disabled={isGeneratingPDF}
-                  className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
+                  onClick={() => setShowPrintPortal(true)} 
+                  className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-50"
                 >
-                  {isGeneratingPDF ? <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> : <FileText size={12} />}
-                  {isGeneratingPDF ? 'Generating...' : 'Preview & Download PDF'}
+                  <Download size={12} className="text-primary" /> Download PDF / Preview
                 </button>
                 <button 
                   onClick={handleDownloadDOCX} 
-                  disabled={isGeneratingPDF}
+                  disabled={isExporting}
                   className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
                 >
-                  {isGeneratingPDF ? <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> : <Download size={12} />}
-                  {isGeneratingPDF ? 'Generating...' : 'Download DOCX'}
+                  {isExporting ? <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> : <Download size={12} />}
+                  {isExporting ? 'Generating...' : 'Download DOCX'}
                 </button>
-                <button onClick={() => handleExport('pdf')} className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2">
+                <button onClick={() => handleExport('print')} className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2">
                   <Printer size={12} /> Print Document
                 </button>
                 <button onClick={() => handleExport('csv')} className="w-full px-4 py-2 text-left text-[10px] font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2">
@@ -2128,501 +1979,32 @@ export default function AccountingSystem({
         onClose={() => setShowPrintPortal(false)}
         title={`${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Report`}
         subtitle={`${companySettings.name} - ${new Date().toLocaleDateString()}`}
-        onDownload={() => handleGeneratePDF(false)}
-        isGeneratingPDF={isGeneratingPDF}
       >
-        <div ref={reportRef} className="bg-white p-8 max-w-[1024px] mx-auto text-gray-900" data-print-root>
-          {/* Executive Document Branded Header */}
-          <div className="border-b-2 border-primary pb-6 mb-6">
-            <div className="flex justify-between items-start gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-white font-black text-2xl shadow-md border border-primary/20">
-                  {companySettings.logo ? (
-                    <img src={companySettings.logo} alt="Logo" className="w-full h-full object-contain rounded-xl" referrerPolicy="no-referrer" />
-                  ) : (
-                    companySettings.name.charAt(0)
-                  )}
-                </div>
-                <div>
-                  <h1 className="text-xl font-black text-gray-900 uppercase tracking-tight">{companySettings.name}</h1>
-                  <p className="text-xs text-gray-500 max-w-sm whitespace-pre-line leading-relaxed">{companySettings.address}</p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-gray-500 font-bold mt-1">
-                    {companySettings.phones?.map((p, i) => (
-                      <span key={i}>Tel: <span className="font-normal text-gray-700">{p}</span></span>
-                    ))}
-                    {companySettings.email && <span>Email: <span className="font-normal text-gray-700">{companySettings.email}</span></span>}
-                    {companySettings.website && <span className="text-primary font-bold">{companySettings.website}</span>}
-                  </div>
-                  {companySettings.taxId && (
-                    <p className="text-[9px] font-black text-gray-900 uppercase tracking-wider mt-0.5">
-                      TAX ID / REG: <span className="font-mono text-primary">{companySettings.taxId}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-right space-y-1">
-                <span className="px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-[9px] font-black uppercase tracking-wider">
-                  Official Financial Document
-                </span>
-                <h2 className="text-lg font-black text-gray-900 uppercase tracking-tight mt-1">
-                  {activeTab === 'statements' ? 'Financial Statements & Audit' :
-                   activeTab === 'ledger' ? 'General Ledger Report' :
-                   activeTab === 'journals' ? 'General Journal Entries' :
-                   activeTab === 'accounts' ? 'Chart of Accounts Schedule' : 'Executive Accounting Report'}
-                </h2>
-                <div className="text-[9px] text-gray-500 space-y-0.5 font-bold uppercase tracking-wider">
-                  <p>As Of: <span className="font-mono text-gray-800 font-normal">{new Date().toLocaleDateString()}</span></p>
-                  <p>Doc Ref: <span className="font-mono text-gray-800 font-normal">ACC-{activeTab.slice(0, 3).toUpperCase()}-{new Date().getFullYear()}</span></p>
-                  <p>Currency: <span className="font-mono text-primary">{companySettings.currency}</span></p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Financial Executive KPI Summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8 break-inside-avoid">
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Total Revenue</p>
-              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalIncome)}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Gross Profit</p>
-              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(grossProfit)}</p>
-              <span className="text-[7.5px] font-bold text-primary">{grossMargin}% margin</span>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Operating Exp.</p>
-              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalExpenses)}</p>
-            </div>
-            <div className="p-3 bg-primary/5 rounded-xl border border-primary/20">
-              <p className="text-[8px] font-black text-primary uppercase tracking-wider">Net Income</p>
-              <p className={cn("text-xs font-black mt-0.5", netProfit >= 0 ? "text-green-700" : "text-red-600")}>
-                {formatCurrency(netProfit)}
-              </p>
-              <span className="text-[7.5px] font-bold text-gray-500">{netMargin}% net</span>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Total Assets</p>
-              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(totalAssets)}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Working Capital</p>
-              <p className="text-xs font-black text-gray-900 mt-0.5">{formatCurrency(workingCapital)}</p>
-            </div>
-          </div>
-          
-          {/* Dashboard View */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6 break-inside-avoid">
-              <div className="border border-gray-200 rounded-xl p-5 bg-white space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-gray-800 border-b border-gray-100 pb-2">
-                  Account Balances & Liquidity Position
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Cash on Hand</span>
-                    <p className="font-bold text-gray-900">{formatCurrency(cashOnHand)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Bank Balance</span>
-                    <p className="font-bold text-gray-900">{formatCurrency(bankBalance)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Accounts Receivable</span>
-                    <p className="font-bold text-blue-700">{formatCurrency(totalAR)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Accounts Payable</span>
-                    <p className="font-bold text-amber-700">{formatCurrency(totalAP)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Ledger Audit Trail */}
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-gray-700">Recent Ledger Activity</h4>
-                </div>
-                <table className="w-full text-left text-[9pt]">
-                  <thead className="bg-gray-50/50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Date</th>
-                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Description</th>
-                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-gray-400">Account</th>
-                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-right text-gray-400">Debit</th>
-                      <th className="px-4 py-2 text-[8pt] font-black uppercase text-right text-gray-400">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {ledgerEntries.slice(0, 10).map((e) => (
-                      <tr key={e.id}>
-                        <td className="px-4 py-2 text-gray-500 font-mono text-[8pt]">{new Date(e.date).toLocaleDateString()}</td>
-                        <td className="px-4 py-2 font-bold text-gray-800">{e.description}</td>
-                        <td className="px-4 py-2 text-gray-600">{e.accountName}</td>
-                        <td className="px-4 py-2 text-right font-bold text-gray-900">{e.debit > 0 ? formatCurrency(e.debit) : '-'}</td>
-                        <td className="px-4 py-2 text-right font-bold text-gray-900">{e.credit > 0 ? formatCurrency(e.credit) : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Journals Print View */}
-          {activeTab === 'journals' && (
-            <div className="space-y-4">
-              <table className="w-full text-left border-collapse border border-gray-200 rounded-xl overflow-hidden text-[9pt]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Description</th>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Reference</th>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider">Account</th>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider text-right">Debit</th>
-                    <th className="px-3 py-2 text-[8pt] font-black text-gray-500 uppercase tracking-wider text-right">Credit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredEntries.map((e) => {
-                    const account = ledgerAccounts.find(a => a.id === e.accountId);
-                    return (
-                      <tr key={e.id} className="hover:bg-gray-50/50">
-                        <td className="px-3 py-2 text-gray-600 font-mono text-[8pt]">{new Date(e.date).toLocaleDateString()}</td>
-                        <td className="px-3 py-2 font-bold text-gray-800">{e.description}</td>
-                        <td className="px-3 py-2">
-                          <span className="font-mono text-[8pt] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                            {e.referenceId || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {account ? `${account.name} (${account.code})` : e.accountName || 'Unknown'}
-                        </td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-900">
-                          {e.debit > 0 ? formatCurrency(e.debit) : '-'}
-                        </td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-900">
-                          {e.credit > 0 ? formatCurrency(e.credit) : '-'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="bg-gray-50 font-black text-[9pt] border-t-2 border-gray-300">
-                  <tr>
-                    <td colSpan={4} className="px-3 py-2 text-gray-700 uppercase">Total Reconciled Ledger Footing</td>
-                    <td className="px-3 py-2 text-right text-gray-900">
-                      {formatCurrency(filteredEntries.reduce((sum, e) => sum + e.debit, 0))}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-900">
-                      {formatCurrency(filteredEntries.reduce((sum, e) => sum + e.credit, 0))}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-
-          {/* Ledger Accounts Print View */}
-          {activeTab === 'ledger' && (
-            <div className="space-y-6">
-              {ledgerAccounts.map(acc => {
-                const accEntries = ledgerEntries.filter(e => e.accountId === acc.id);
-                if (accEntries.length === 0) return null;
-                const totalDebit = accEntries.reduce((sum, e) => sum + e.debit, 0);
-                const totalCredit = accEntries.reduce((sum, e) => sum + e.credit, 0);
-
-                return (
-                  <div key={acc.id} className="border border-gray-200 rounded-xl overflow-hidden break-inside-avoid">
-                    <div className="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-white border border-gray-200 text-gray-700 font-mono font-bold text-[8pt] rounded">
-                          {acc.code}
-                        </span>
-                        <h3 className="text-xs font-black uppercase text-gray-900">{acc.name}</h3>
-                        <span className="text-[8pt] text-gray-400 font-bold uppercase">({acc.type})</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[8pt] text-gray-500 font-bold uppercase">Closing Balance: </span>
-                        <span className="text-xs font-black text-gray-900">{formatCurrency(Math.abs(acc.balance))}</span>
-                      </div>
-                    </div>
-                    <table className="w-full text-left text-[8.5pt]">
-                      <thead className="bg-white border-b border-gray-100 text-[7.5pt] font-black uppercase text-gray-400">
-                        <tr>
-                          <th className="px-3 py-1.5">Date</th>
-                          <th className="px-3 py-1.5">Description</th>
-                          <th className="px-3 py-1.5">Reference</th>
-                          <th className="px-3 py-1.5 text-right">Debit</th>
-                          <th className="px-3 py-1.5 text-right">Credit</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {accEntries.map(e => (
-                          <tr key={e.id}>
-                            <td className="px-3 py-1.5 font-mono text-gray-500">{new Date(e.date).toLocaleDateString()}</td>
-                            <td className="px-3 py-1.5 font-bold text-gray-800">{e.description}</td>
-                            <td className="px-3 py-1.5 font-mono text-[7.5pt] text-gray-500">{e.referenceId || '-'}</td>
-                            <td className="px-3 py-1.5 text-right font-bold text-gray-900">{e.debit > 0 ? formatCurrency(e.debit) : '-'}</td>
-                            <td className="px-3 py-1.5 text-right font-bold text-gray-900">{e.credit > 0 ? formatCurrency(e.credit) : '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gray-50/70 border-t border-gray-200 text-[8pt] font-black">
-                        <tr>
-                          <td colSpan={3} className="px-3 py-1.5 text-gray-600 uppercase">Account Activity Total</td>
-                          <td className="px-3 py-1.5 text-right text-gray-900">{formatCurrency(totalDebit)}</td>
-                          <td className="px-3 py-1.5 text-right text-gray-900">{formatCurrency(totalCredit)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Full Financial Statements View (Profit & Loss, Balance Sheet, Trial Balance) */}
-          {activeTab === 'statements' && (
-            <div className="space-y-8">
-              {/* Part 1: Comprehensive Profit & Loss Statement */}
-              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
-                <div className="bg-primary/5 px-4 py-3 border-b border-primary/20 flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-primary">
-                    1. Profit & Loss Statement (Income Statement)
-                  </h3>
-                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Period Ended {new Date().toLocaleDateString()}</span>
-                </div>
-                <div className="p-4 space-y-4 text-xs">
-                  {/* Revenue */}
-                  <div>
-                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Operating Revenue</h4>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="font-bold text-gray-700">Gross Sales Revenue</span>
-                      <span className="font-mono font-bold text-gray-900">{formatCurrency(totalIncome)}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1.5 border-t border-gray-100 font-black text-gray-900">
-                      <span>Total Revenue</span>
-                      <span className="font-mono">{formatCurrency(totalIncome)}</span>
-                    </div>
-                  </div>
-
-                  {/* COGS */}
-                  <div>
-                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Cost of Goods Sold (COGS)</h4>
-                    <div className="flex justify-between items-center py-1 text-gray-700">
-                      <span>Direct Product Material & Purchase Costs</span>
-                      <span className="font-mono font-bold">({formatCurrency(cogsAmount)})</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 px-3 bg-rose-50/70 border border-rose-100 rounded-lg text-primary font-black mt-2">
-                      <span className="uppercase tracking-wider text-[10px]">Gross Profit Margin</span>
-                      <span className="font-mono text-sm">{formatCurrency(grossProfit)}</span>
-                    </div>
-                  </div>
-
-                  {/* Operating Expenses */}
-                  <div>
-                    <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-1 mb-2">Operating Expenses</h4>
-                    {ledgerAccounts.filter(a => a.type === 'Expense' && a.id !== cogsAccount?.id).map(exp => (
-                      <div key={exp.id} className="flex justify-between items-center py-1 text-gray-700">
-                        <span>{exp.name} <span className="text-gray-400 font-mono text-[9px]">({exp.code})</span></span>
-                        <span className="font-mono font-bold text-gray-900">{formatCurrency(exp.balance)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center py-1.5 border-t border-gray-100 font-black text-gray-900">
-                      <span>Total Operating Expenses</span>
-                      <span className="font-mono">{formatCurrency(totalExpenses)}</span>
-                    </div>
-                  </div>
-
-                  {/* Net Income Callout */}
-                  <div className="p-3 bg-gray-900 text-white rounded-xl flex justify-between items-center">
-                    <div>
-                      <p className="text-[9px] text-gray-400 font-black uppercase tracking-wider">Net Operating Income</p>
-                      <p className="text-[8px] text-gray-400">Total Revenue - Total Cost & Expenses</p>
-                    </div>
-                    <span className={cn("text-base font-black font-mono", netProfit >= 0 ? "text-green-400" : "text-red-400")}>
-                      {formatCurrency(netProfit)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Part 2: Comprehensive Balance Sheet */}
-              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
-                    2. Balance Sheet (Statement of Financial Position)
-                  </h3>
-                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">As of {new Date().toLocaleDateString()}</span>
-                </div>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                  {/* Assets Column */}
-                  <div className="space-y-3">
-                    <h4 className="text-[9px] font-black text-blue-700 uppercase tracking-widest border-b border-blue-200 pb-1">
-                      Assets
-                    </h4>
-                    {assetAccounts.map(a => (
-                      <div key={a.id} className="flex justify-between items-center py-1 text-gray-700">
-                        <span>{a.name} <span className="text-gray-400 font-mono text-[9px]">({a.code})</span></span>
-                        <span className="font-mono font-bold text-gray-900">{formatCurrency(a.balance)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center py-2 px-3 bg-blue-50/80 border border-blue-100 rounded-lg font-black text-blue-900">
-                      <span className="uppercase text-[9px] tracking-wider">Total Assets</span>
-                      <span className="font-mono text-xs">{formatCurrency(totalAssets)}</span>
-                    </div>
-                  </div>
-
-                  {/* Liabilities & Equity Column */}
-                  <div className="space-y-3">
-                    <h4 className="text-[9px] font-black text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1">
-                      Liabilities & Equity
-                    </h4>
-                    {liabilityAccounts.map(l => (
-                      <div key={l.id} className="flex justify-between items-center py-1 text-gray-700">
-                        <span>{l.name} <span className="text-gray-400 font-mono text-[9px]">({l.code})</span></span>
-                        <span className="font-mono font-bold text-gray-900">{formatCurrency(l.balance)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center py-1 border-t border-gray-100 font-black text-gray-900">
-                      <span>Total Liabilities</span>
-                      <span className="font-mono">{formatCurrency(totalLiabilities)}</span>
-                    </div>
-
-                    <h4 className="text-[9px] font-black text-purple-700 uppercase tracking-widest border-b border-purple-200 pb-1 pt-2">
-                      Equity & Retained Earnings
-                    </h4>
-                    {equityAccounts.map(eq => (
-                      <div key={eq.id} className="flex justify-between items-center py-1 text-gray-700">
-                        <span>{eq.name} <span className="text-gray-400 font-mono text-[9px]">({eq.code})</span></span>
-                        <span className="font-mono font-bold text-gray-900">{formatCurrency(eq.balance)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center py-1 text-gray-700">
-                      <span>Current Year Retained Earnings (Net Profit)</span>
-                      <span className="font-mono font-bold text-gray-900">{formatCurrency(netProfit)}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 px-3 bg-purple-50/80 border border-purple-100 rounded-lg font-black text-purple-900">
-                      <span className="uppercase text-[9px] tracking-wider">Total Liabilities & Equity</span>
-                      <span className="font-mono text-xs">{formatCurrency(totalLiabilities + totalEquity + netProfit)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Part 3: Trial Balance Table */}
-              <div className="border border-gray-200 rounded-2xl overflow-hidden break-inside-avoid">
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
-                    3. Trial Balance Schedule
-                  </h3>
-                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Balanced Ledger Audit</span>
-                </div>
-                <table className="w-full text-left text-[8.5pt]">
-                  <thead className="bg-gray-50/50 border-b border-gray-200 text-[7.5pt] font-black uppercase text-gray-500">
-                    <tr>
-                      <th className="px-3 py-2">Code</th>
-                      <th className="px-3 py-2">Account Name</th>
-                      <th className="px-3 py-2">Classification</th>
-                      <th className="px-3 py-2 text-right">Debit Balance</th>
-                      <th className="px-3 py-2 text-right">Credit Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {ledgerAccounts.map(acc => {
-                      const isDebit = acc.type === 'Asset' || acc.type === 'Expense';
-                      const debitVal = isDebit ? Math.max(0, acc.balance) : 0;
-                      const creditVal = !isDebit ? Math.max(0, acc.balance) : 0;
-                      return (
-                        <tr key={acc.id} className="hover:bg-gray-50/50">
-                          <td className="px-3 py-1.5 font-mono text-gray-500">{acc.code}</td>
-                          <td className="px-3 py-1.5 font-bold text-gray-800">{acc.name}</td>
-                          <td className="px-3 py-1.5 text-gray-500">{acc.type}</td>
-                          <td className="px-3 py-1.5 text-right font-mono font-bold text-gray-900">
-                            {debitVal > 0 ? formatCurrency(debitVal) : '-'}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-bold text-gray-900">
-                            {creditVal > 0 ? formatCurrency(creditVal) : '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-black text-[8.5pt]">
-                    <tr>
-                      <td colSpan={3} className="px-3 py-2 text-gray-700 uppercase">Trial Balance Totals</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-900">
-                        {formatCurrency(ledgerAccounts.filter(a => a.type === 'Asset' || a.type === 'Expense').reduce((s, a) => s + Math.max(0, a.balance), 0))}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-900">
-                        {formatCurrency(ledgerAccounts.filter(a => a.type !== 'Asset' && a.type !== 'Expense').reduce((s, a) => s + Math.max(0, a.balance), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Part 4: Official Signatures Section */}
-              <div className="pt-8 border-t border-gray-200 grid grid-cols-3 gap-6 text-center break-inside-avoid">
-                <div className="space-y-10">
-                  <div className="h-10 border-b border-gray-300"></div>
-                  <div>
-                    <p className="text-[10px] font-black text-gray-900 uppercase">Prepared By</p>
-                    <p className="text-[8px] text-gray-400">Chief Accountant</p>
-                  </div>
-                </div>
-                <div className="space-y-10">
-                  <div className="h-10 border-b border-gray-300"></div>
-                  <div>
-                    <p className="text-[10px] font-black text-gray-900 uppercase">Audited & Verified</p>
-                    <p className="text-[8px] text-gray-400">Internal Audit Department</p>
-                  </div>
-                </div>
-                <div className="space-y-10">
-                  <div className="h-10 border-b border-gray-300"></div>
-                  <div>
-                    <p className="text-[10px] font-black text-gray-900 uppercase">Approved By</p>
-                    <p className="text-[8px] text-gray-400">Managing Director / CEO</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Accounts Print View */}
-          {activeTab === 'accounts' && (
-            <div className="space-y-4">
-              <table className="w-full text-left border-collapse border border-gray-200 rounded-xl overflow-hidden text-[9pt]">
-                <thead className="bg-gray-50 border-b border-gray-200 text-[8pt] font-black uppercase text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2">Code</th>
-                    <th className="px-3 py-2">Account Name</th>
-                    <th className="px-3 py-2">Category</th>
-                    <th className="px-3 py-2 text-right">Balance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {ledgerAccounts.map(acc => (
-                    <tr key={acc.id}>
-                      <td className="px-3 py-2 font-mono text-gray-600">{acc.code}</td>
-                      <td className="px-3 py-2 font-bold text-gray-900">{acc.name}</td>
-                      <td className="px-3 py-2">
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[8pt] font-bold">
-                          {acc.type}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-gray-900">
-                        {formatCurrency(acc.balance)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <AccountingDocumentView
+          statementType={
+            activeTab === 'statements' ? 'income-statement' :
+            activeTab === 'ledger' ? 'ledger' :
+            activeTab === 'accounts' ? 'trial-balance' :
+            activeTab === 'journals' ? 'ledger' : 'dashboard'
+          }
+          companySettings={companySettings}
+          ledgerAccounts={ledgerAccounts}
+          ledgerEntries={ledgerEntries}
+          transactions={transactions}
+          totalIncome={totalIncome}
+          totalExpenses={totalExpenses}
+          netProfit={netProfit}
+          cogsAmount={cogsAmount}
+          grossProfit={grossProfit}
+          totalAssets={totalAssets}
+          totalLiabilities={totalLiabilities}
+          totalEquity={totalEquity}
+          cashOnHand={cashOnHand}
+          bankBalance={bankBalance}
+          totalAR={totalAR}
+          totalAP={totalAP}
+          workingCapital={workingCapital}
+        />
       </PrintPortal>
 
       <ConfirmModal 

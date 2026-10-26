@@ -31,9 +31,6 @@ import { Invoice, CompanySettings, Transaction, Client, Product } from '../../ty
 import { motion, AnimatePresence } from 'motion/react';
 import InvoicePrintView from './InvoicePrintView';
 import ConfirmModal from '../layout/ConfirmModal';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { handleHtml2CanvasClone } from '../../lib/pdf-utils';
 import PrintPortal from '../layout/PrintPortal';
 import { useNotifications } from '../../context/NotificationContext';
 
@@ -87,7 +84,6 @@ export default function InvoiceSystem({
   const [formItems, setFormItems] = useState<any[]>([]);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showPrintPortal, setShowPrintPortal] = useState(false);
   const [taxRate, setTaxRate] = useState(companySettings.defaultTaxRate);
   const [discountRate, setDiscountRate] = useState(0);
@@ -203,94 +199,6 @@ export default function InvoiceSystem({
     setIsFormModalOpen(false);
     setEditingInvoice(null);
     setFormItems([]);
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!printRef.current || !selectedInvoice) return;
-    setIsGeneratingPDF(true);
-    try {
-      const element = printRef.current;
-      
-      // Temporary style to ensure all elements are visible and formatted correctly for capture
-      const originalStyle = element.style.cssText;
-      element.style.width = '1024px'; // Fixed width for consistent capture
-      element.style.padding = '40px';
-      element.style.backgroundColor = '#ffffff';
-      element.style.boxSizing = 'border-box';
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024,
-        onclone: (clonedDoc) => {
-          handleHtml2CanvasClone(clonedDoc);
-          
-          // Ensure the cloned element has the same fixed width
-          const clonedElement = clonedDoc.querySelector('[data-print-root]') as HTMLElement || clonedDoc.body.firstChild as HTMLElement;
-          if (clonedElement) {
-            clonedElement.style.width = '1024px';
-            clonedElement.style.padding = '40px';
-            clonedElement.style.boxSizing = 'border-box';
-          }
-
-          // Fix any remaining oklab colors just in case
-          const allElements = clonedDoc.getElementsByTagName('*');
-          for (let i = 0; i < allElements.length; i++) {
-            const el = allElements[i] as HTMLElement;
-            if (el.style.color && (el.style.color.includes('oklab') || el.style.color.includes('oklch'))) {
-              el.style.color = '#111827';
-            }
-            if (el.style.backgroundColor && (el.style.backgroundColor.includes('oklab') || el.style.backgroundColor.includes('oklch'))) {
-              el.style.backgroundColor = 'transparent';
-            }
-          }
-        }
-      });
-      
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgProps = pdf.getImageProperties(imgData);
-      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      // Add first page
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if needed
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`invoice_${selectedInvoice.invoiceNumber}.pdf`);
-      
-      // Restore original style
-      element.style.cssText = originalStyle;
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      addNotification({
-        title: 'PDF Error',
-        message: 'Failed to generate PDF. Please try the Print option instead.',
-        type: 'error',
-        category: 'system'
-      });
-    } finally {
-      setIsGeneratingPDF(false);
-    }
   };
 
   const getStatusColor = (status: string) => {
@@ -524,14 +432,6 @@ export default function InvoiceSystem({
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50"
               >
                 <Printer size={14} /> Print Preview
-              </button>
-              <button 
-                onClick={handleDownloadPDF}
-                disabled={isGeneratingPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {isGeneratingPDF ? <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> : <Download size={14} />}
-                {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
               </button>
               <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50">
                 <Mail size={14} /> Email
@@ -1233,8 +1133,6 @@ export default function InvoiceSystem({
         onClose={() => setShowPrintPortal(false)}
         title="Invoice Document"
         subtitle={`Invoice #${selectedInvoice?.invoiceNumber}`}
-        onDownload={handleDownloadPDF}
-        isGeneratingPDF={isGeneratingPDF}
       >
         {selectedInvoice && (
           <div ref={printRef} className="bg-white">

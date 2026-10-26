@@ -1515,7 +1515,6 @@ export default function App() {
                       >
                         <option>System Default</option>
                         <option>Office Laser Jet (A4)</option>
-                        <option>PDF Export</option>
                         <option>Network Printer 02</option>
                       </select>
                     </div>
