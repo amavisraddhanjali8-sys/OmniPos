@@ -284,7 +284,8 @@ export default function TopBar({
                                     e.stopPropagation();
                                     deleteNotification(n.id);
                                   }}
-                                  className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                  className="text-gray-400 hover:text-red-500 transition-all p-1 rounded hover:bg-red-50"
+                                  title="Delete notification"
                                 >
                                   <Trash2 size={12} />
                                 </button>

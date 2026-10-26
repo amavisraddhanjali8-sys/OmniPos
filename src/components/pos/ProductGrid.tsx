@@ -35,6 +35,7 @@ export default function ProductGrid({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   const filteredProducts = products.filter(p => {
     const matchesCategory = activeCategory === 'All' || p.category === activeCategory;
@@ -178,16 +179,17 @@ export default function ProductGrid({
                     className="w-full text-left flex flex-col h-full p-2 focus:outline-none"
                   >
                     <div className="aspect-square rounded-xl bg-gray-50 mb-3 overflow-hidden relative w-full">
-                      {product.image ? (
+                      {product.image && !brokenImages[product.id] ? (
                         <img 
                           src={product.image} 
                           alt={product.name} 
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                           referrerPolicy="no-referrer"
+                          onError={() => setBrokenImages(prev => ({ ...prev, [product.id]: true }))}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-primary/40 font-bold text-2xl bg-primary/5">
-                          {product.name[0]}
+                          {product.name ? product.name[0] : 'P'}
                         </div>
                       )}
                       {product.isService && (
@@ -240,8 +242,18 @@ export default function ProductGrid({
                   <tr key={product.id} className="hover:bg-gray-50 transition-colors group">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden">
-                          <img src={product.image} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
+                          {product.image && !brokenImages[product.id] ? (
+                            <img 
+                              src={product.image} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                              onError={() => setBrokenImages(prev => ({ ...prev, [product.id]: true }))}
+                            />
+                          ) : (
+                            <span className="text-primary font-bold text-xs">{product.name ? product.name[0] : 'P'}</span>
+                          )}
                         </div>
                         <div>
                           <p className="text-xs font-bold text-gray-900">{product.name}</p>

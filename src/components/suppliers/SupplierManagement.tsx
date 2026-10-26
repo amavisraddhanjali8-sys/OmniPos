@@ -227,7 +227,7 @@ export default function SupplierManagement({
                 <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
                   <Truck size={24} />
                 </div>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1.5 items-center">
                   <button 
                     onClick={() => { setSelectedSupplierForPayment(supplier); setIsPaymentModalOpen(true); }}
                     className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all"

@@ -279,7 +279,7 @@ export default function ExpenseSystem({
                         <p className="text-lg font-black text-gray-900">{formatCurrency(exp.amount)}</p>
                         <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">{exp.paymentMethod}</p>
                       </div>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-1.5 items-center">
                         <button 
                           onClick={() => { setEditingExpense(exp); setIsModalOpen(true); }}
                           className="p-2 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-all"

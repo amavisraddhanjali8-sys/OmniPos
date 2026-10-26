@@ -1,5 +1,8 @@
 {
   "name": "OmniConnect POS & Business Suite",
   "description": "A comprehensive POS, Quotation, and Accounting system for communication centers, printing shops, and retail businesses.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -40,7 +40,17 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem('omni_products');
-      return saved ? JSON.parse(saved) : PRODUCTS;
+      if (saved) {
+        const parsed: Product[] = JSON.parse(saved);
+        return parsed.map(p => {
+          const defaultProd = PRODUCTS.find(dp => dp.id === p.id);
+          if (p.image && p.image.includes('picsum.photos') && defaultProd?.image) {
+            return { ...p, image: defaultProd.image };
+          }
+          return p;
+        });
+      }
+      return PRODUCTS;
     } catch { return PRODUCTS; }
   });
   const [categories, setCategories] = useState<string[]>(['Reloads', 'Bills', 'Printing', 'Accessories', 'Books', 'Stationery']);

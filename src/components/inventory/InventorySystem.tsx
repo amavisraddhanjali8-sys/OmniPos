@@ -65,6 +65,7 @@ export default function InventorySystem({
   const [movementToDelete, setMovementToDelete] = useState<string | null>(null);
   const [isClearingHistory, setIsClearingHistory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   
   const [movements, setMovements] = useState<InventoryMovement[]>(MOCK_INVENTORY_MOVEMENTS);
   const [selectedCategory, setSelectedCategory] = useState<Category | 'All'>('All');
@@ -431,13 +432,13 @@ export default function InventorySystem({
                   <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase">{t.costPrice}</th>
                   <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase">{t.price}</th>
                   <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase">{t.supplier}</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase text-right">{t.actions || 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-xs text-gray-400 italic">
+                    <td colSpan={8} className="px-4 py-12 text-center text-xs text-gray-400 italic">
                       No products found matching your criteria.
                     </td>
                   </tr>
@@ -446,11 +447,17 @@ export default function InventorySystem({
                     <tr key={product.id} className="hover:bg-gray-50 transition-colors group">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 overflow-hidden border border-gray-100">
-                            {product.image ? (
-                              <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
+                          <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 overflow-hidden border border-gray-100 shrink-0">
+                            {product.image && !brokenImages[product.id] ? (
+                              <img 
+                                src={product.image} 
+                                alt={product.name} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                referrerPolicy="no-referrer" 
+                                onError={() => setBrokenImages(prev => ({ ...prev, [product.id]: true }))}
+                              />
                             ) : (
-                              <Package size={16} />
+                              <Package size={16} className="text-gray-400" />
                             )}
                           </div>
                           <div>
@@ -488,36 +495,38 @@ export default function InventorySystem({
                       <td className="px-4 py-3 text-xs font-bold text-gray-900">{formatCurrency(product.price)}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">{product.supplier || '-'}</td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-1.5 items-center">
                           {productToDelete === product.id ? (
                             <div className="flex items-center gap-1 bg-red-50 p-1 rounded-lg border border-red-100">
                               <span className="text-[8px] font-bold text-red-600 px-1">Delete?</span>
-                              <button onClick={confirmDeleteProduct} className="p-1 bg-red-500 text-white rounded text-[8px] font-bold">Yes</button>
-                              <button onClick={() => setProductToDelete(null)} className="p-1 bg-gray-200 text-gray-600 rounded text-[8px] font-bold">No</button>
+                              <button onClick={confirmDeleteProduct} className="p-1 bg-red-500 text-white rounded text-[8px] font-bold hover:bg-red-600 transition-colors">Yes</button>
+                              <button onClick={() => setProductToDelete(null)} className="p-1 bg-gray-200 text-gray-600 rounded text-[8px] font-bold hover:bg-gray-300 transition-colors">No</button>
                             </div>
                           ) : (
                             <>
                               <button 
                                 onClick={() => openEditModal(product)}
-                                className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                                className="p-1.5 text-gray-500 hover:text-primary hover:bg-primary/10 bg-gray-50 hover:bg-gray-100 border border-gray-200/80 rounded-lg transition-all shadow-2xs"
+                                title={t.edit || "Edit Product"}
                               >
-                                <Edit2 size={14} />
+                                <Edit2 size={13} />
                               </button>
                               <button 
                                 onClick={() => {
                                   setSelectedBarcodeProduct(product);
                                   setIsBarcodeModalOpen(true);
                                 }}
-                                className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                                className="p-1.5 text-gray-500 hover:text-primary hover:bg-primary/10 bg-gray-50 hover:bg-gray-100 border border-gray-200/80 rounded-lg transition-all shadow-2xs"
                                 title="Print Barcode"
                               >
-                                <BarcodeIcon size={14} />
+                                <BarcodeIcon size={13} />
                               </button>
                               <button 
                                 onClick={() => handleDeleteProduct(product.id)}
-                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 bg-gray-50 hover:bg-gray-100 border border-gray-200/80 rounded-lg transition-all shadow-2xs"
+                                title={t.delete || "Delete Product"}
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} />
                               </button>
                             </>
                           )}
@@ -610,9 +619,10 @@ export default function InventorySystem({
                             ) : (
                               <button 
                                 onClick={() => handleDeleteMovement(movement.id)}
-                                className="p-1 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete movement record"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} />
                               </button>
                             )}
                           </td>
@@ -725,21 +735,23 @@ export default function InventorySystem({
                       ) : (
                         <>
                           <span className="text-sm font-bold text-gray-700">{cat}</span>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex gap-1.5 items-center">
                             <button 
                               onClick={() => {
                                 setNewCategoryName(cat);
                                 setEditingCategory(cat);
                               }}
-                              className="p-1.5 text-gray-400 hover:text-primary transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-primary hover:bg-white rounded-lg transition-colors border border-gray-100 hover:border-gray-200"
+                              title="Edit category"
                             >
-                              <Edit2 size={14} />
+                              <Edit2 size={13} />
                             </button>
                             <button 
                               onClick={() => handleDeleteCategory(cat)}
-                              className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-100 hover:border-red-200"
+                              title="Delete category"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         </>

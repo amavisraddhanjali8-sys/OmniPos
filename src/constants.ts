@@ -95,9 +95,9 @@ export const MOCK_SUPPLIERS: Supplier[] = [
 
 export const PRODUCTS: Product[] = [
   // Accessories
-  { id: 'acc1', name: 'iPhone Fast Charger', price: 2500, category: 'Accessories', stock: 45, minStock: 10, costPrice: 1800, supplier: 'TechSupply Ltd', image: 'https://picsum.photos/seed/charger/200', barcode: '1001' },
-  { id: 'acc2', name: 'USB-C Cable 2m', price: 1250, category: 'Accessories', stock: 22, minStock: 5, costPrice: 850, supplier: 'TechSupply Ltd', image: 'https://picsum.photos/seed/cable/200', barcode: '1002' },
-  { id: 'acc3', name: 'Wireless Earbuds', price: 4500, category: 'Accessories', stock: 15, minStock: 5, costPrice: 3200, supplier: 'SoundWave', image: 'https://picsum.photos/seed/earbuds/200', barcode: '1003' },
+  { id: 'acc1', name: 'iPhone Fast Charger', price: 2500, category: 'Accessories', stock: 45, minStock: 10, costPrice: 1800, supplier: 'TechSupply Ltd', image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=200&auto=format&fit=crop&q=80', barcode: '1001' },
+  { id: 'acc2', name: 'USB-C Cable 2m', price: 1250, category: 'Accessories', stock: 22, minStock: 5, costPrice: 850, supplier: 'TechSupply Ltd', image: 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=200&auto=format&fit=crop&q=80', barcode: '1002' },
+  { id: 'acc3', name: 'Wireless Earbuds', price: 4500, category: 'Accessories', stock: 15, minStock: 5, costPrice: 3200, supplier: 'SoundWave', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200&auto=format&fit=crop&q=80', barcode: '1003' },
   
   // Printing Services
   { id: 'pr1', name: 'A4 Color Print', price: 50, category: 'Printing', isService: true, stock: 0, minStock: 0, costPrice: 15, barcode: '2001' },
@@ -110,9 +110,9 @@ export const PRODUCTS: Product[] = [
   { id: 'bill1', name: 'Electricity Bill', price: 0, category: 'Bills', isService: true, stock: 0, minStock: 0, costPrice: 0, barcode: '3003' },
   
   // Books & Stationery
-  { id: 'bk1', name: 'Hardcover Notebook', price: 800, category: 'Stationery', stock: 60, minStock: 15, costPrice: 550, supplier: 'PaperMill', image: 'https://picsum.photos/seed/notebook/200', barcode: '4001' },
-  { id: 'bk2', name: 'Gel Pen Set (12pcs)', price: 1400, category: 'Stationery', stock: 40, minStock: 10, costPrice: 900, supplier: 'StationeryHub', image: 'https://picsum.photos/seed/pens/200', barcode: '4002' },
-  { id: 'bk3', name: 'The Great Gatsby', price: 1200, category: 'Books', stock: 8, minStock: 3, costPrice: 800, supplier: 'EduBooks', image: 'https://picsum.photos/seed/book1/200', barcode: '4003' },
+  { id: 'bk1', name: 'Hardcover Notebook', price: 800, category: 'Stationery', stock: 60, minStock: 15, costPrice: 550, supplier: 'PaperMill', image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=200&auto=format&fit=crop&q=80', barcode: '4001' },
+  { id: 'bk2', name: 'Gel Pen Set (12pcs)', price: 1400, category: 'Stationery', stock: 40, minStock: 10, costPrice: 900, supplier: 'StationeryHub', image: 'https://images.unsplash.com/photo-1585336261026-4186644199b8?w=200&auto=format&fit=crop&q=80', barcode: '4002' },
+  { id: 'bk3', name: 'The Great Gatsby', price: 1200, category: 'Books', stock: 8, minStock: 3, costPrice: 800, supplier: 'EduBooks', image: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=200&auto=format&fit=crop&q=80', barcode: '4003' },
 ];
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
