@@ -330,13 +330,13 @@ export default function Cart({
               </div>
             </motion.div>
           ) : (
-            items.map((item) => (
+            items.map((item, idx) => (
               <motion.div
                 layout
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                key={item.id}
+                key={`cart-item-${item.id || idx}`}
                 className="flex gap-3 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all group"
               >
                 <div className="w-14 h-14 rounded-xl bg-gray-50 shrink-0 overflow-hidden border border-gray-100 group-hover:scale-105 transition-transform">

@@ -352,7 +352,7 @@ export default function InvoiceSystem({
                         <button 
                           onClick={() => { 
                             setEditingInvoice(inv); 
-                            setFormItems(inv.items);
+                            setFormItems(inv.items.map((it, idx) => ({ ...it, id: it.id || `inv-item-${idx}-${Date.now()}` })));
                             setTaxRate(inv.taxRate);
                             setDiscountRate(inv.discountRate || 0);
                             setFreight(inv.freight);
@@ -447,7 +447,7 @@ export default function InvoiceSystem({
               <button 
                 onClick={() => { 
                   setEditingInvoice(selectedInvoice); 
-                  setFormItems(selectedInvoice!.items);
+                  setFormItems(selectedInvoice!.items.map((it, idx) => ({ ...it, id: it.id || `inv-item-${idx}-${Date.now()}` })));
                   setTaxRate(selectedInvoice!.taxRate);
                   setDiscountRate(selectedInvoice!.discountRate || 0);
                   setFreight(selectedInvoice!.freight);
@@ -718,7 +718,7 @@ export default function InvoiceSystem({
                       </div>
                       <button 
                         type="button"
-                        onClick={() => setFormItems([...formItems, { id: Date.now().toString(), name: '', quantity: 1, price: 0, category: 'General' }])}
+                        onClick={() => setFormItems([...formItems, { id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '', quantity: 1, price: 0, category: 'General' }])}
                         className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
                       >
                         + Add Item
@@ -726,7 +726,7 @@ export default function InvoiceSystem({
                     </div>
                     <div className="space-y-3">
                       {formItems.map((item, index) => (
-                        <div key={item.id} className="grid grid-cols-12 gap-3 items-end bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                        <div key={item.id ? `form-item-${item.id}` : `form-item-${index}`} className="grid grid-cols-12 gap-3 items-end bg-gray-50 p-3 rounded-2xl border border-gray-100">
                           <div className="col-span-5 space-y-1">
                             <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Item Name</label>
                             <input 

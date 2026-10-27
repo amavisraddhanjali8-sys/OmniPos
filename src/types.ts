@@ -245,3 +245,17 @@ export interface AuditLog {
   type: 'info' | 'warning' | 'error' | 'success';
   category: 'inventory' | 'sales' | 'accounting' | 'system' | 'clients' | 'suppliers';
 }
+
+export interface BadDebtRecord {
+  id: string;
+  entityType: 'client' | 'supplier';
+  entityId: string;
+  entityName: string;
+  amount: number;
+  reason: string;
+  date: string;
+  notes?: string;
+  referenceInvoiceId?: string;
+  createdDate: string;
+}
+

@@ -132,7 +132,7 @@ export default function AccountingDocumentView({
               <p className="text-[8pt] text-gray-500 max-w-[220px] whitespace-pre-line ml-auto">{companySettings.address}</p>
               <div className="flex flex-wrap justify-end gap-x-2 text-[7.5pt] text-gray-400 mt-0.5 font-bold">
                 {companySettings.phones?.slice(0, 2).map((p, i) => (
-                  <span key={i}>Tel: {p}</span>
+                  <span key={`doc-phone-${i}-${p}`}>Tel: {p}</span>
                 ))}
                 {companySettings.email && <span>{companySettings.email}</span>}
               </div>
@@ -242,8 +242,8 @@ export default function AccountingDocumentView({
                 </td>
               </tr>
               {expenseAccounts.length > 0 ? (
-                expenseAccounts.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-gray-50/50">
+                expenseAccounts.map((exp, idx) => (
+                  <tr key={`exp-acc-${exp.id || idx}`} className="hover:bg-gray-50/50">
                     <td className="py-1 px-5 text-gray-700 flex justify-between pr-8">
                       <span>{exp.name}</span>
                       <span className="font-mono text-[7pt] text-gray-400">({exp.code})</span>
@@ -332,8 +332,8 @@ export default function AccountingDocumentView({
                   1. Assets
                 </td>
               </tr>
-              {assetAccounts.map(a => (
-                <tr key={a.id} className="hover:bg-gray-50/50">
+              {assetAccounts.map((a, idx) => (
+                <tr key={`asset-acc-${a.id || idx}`} className="hover:bg-gray-50/50">
                   <td className="py-1 px-5 text-gray-700 flex justify-between pr-8">
                     <span>{a.name}</span>
                     <span className="font-mono text-[7pt] text-gray-400">({a.code})</span>
@@ -352,8 +352,8 @@ export default function AccountingDocumentView({
                   2. Liabilities
                 </td>
               </tr>
-              {liabilityAccounts.map(l => (
-                <tr key={l.id} className="hover:bg-gray-50/50">
+              {liabilityAccounts.map((l, idx) => (
+                <tr key={`liab-acc-${l.id || idx}`} className="hover:bg-gray-50/50">
                   <td className="py-1 px-5 text-gray-700 flex justify-between pr-8">
                     <span>{l.name}</span>
                     <span className="font-mono text-[7pt] text-gray-400">({l.code})</span>
@@ -372,8 +372,8 @@ export default function AccountingDocumentView({
                   3. Equity & Retained Earnings
                 </td>
               </tr>
-              {equityAccounts.map(eq => (
-                <tr key={eq.id} className="hover:bg-gray-50/50">
+              {equityAccounts.map((eq, idx) => (
+                <tr key={`eq-acc-${eq.id || idx}`} className="hover:bg-gray-50/50">
                   <td className="py-1 px-5 text-gray-700 flex justify-between pr-8">
                     <span>{eq.name}</span>
                     <span className="font-mono text-[7pt] text-gray-400">({eq.code})</span>
@@ -412,12 +412,12 @@ export default function AccountingDocumentView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ledgerAccounts.map(acc => {
+              {ledgerAccounts.map((acc, idx) => {
                 const isDebit = acc.type === 'Asset' || acc.type === 'Expense';
                 const debit = isDebit ? Math.max(0, acc.balance) : 0;
                 const credit = !isDebit ? Math.max(0, acc.balance) : 0;
                 return (
-                  <tr key={acc.id} className="hover:bg-gray-50/50">
+                  <tr key={`tb-acc-${acc.id || idx}`} className="hover:bg-gray-50/50">
                     <td className="py-1.5 px-3 font-mono text-gray-500">{acc.code}</td>
                     <td className="py-1.5 px-3 font-bold text-gray-800">{acc.name}</td>
                     <td className="py-1.5 px-3 text-gray-500">{acc.type}</td>
@@ -460,8 +460,8 @@ export default function AccountingDocumentView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ledgerEntries.slice(0, 20).map(entry => (
-                <tr key={entry.id} className="hover:bg-gray-50/50">
+              {ledgerEntries.slice(0, 20).map((entry, idx) => (
+                <tr key={`gl-entry-${entry.id || idx}`} className="hover:bg-gray-50/50">
                   <td className="py-1.5 px-3 font-mono text-gray-500">{new Date(entry.date).toLocaleDateString()}</td>
                   <td className="py-1.5 px-3 font-bold text-gray-800">{entry.accountName}</td>
                   <td className="py-1.5 px-3 text-gray-600">{entry.description}</td>

@@ -128,9 +128,9 @@ export default function ProductGrid({
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-          {['All', ...categories].map((cat) => (
+          {Array.from(new Set(['All', ...categories])).map((cat, idx) => (
             <button
-              key={cat}
+              key={`cat-tab-${cat}-${idx}`}
               onClick={() => setActiveCategory(cat)}
               className={cn(
                 "px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all",
@@ -150,13 +150,13 @@ export default function ProductGrid({
         {viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             <AnimatePresence mode="popLayout">
-              {filteredProducts.map((product) => (
+              {filteredProducts.map((product, idx) => (
                 <motion.div
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  key={product.id}
+                  key={`prod-grid-${product.id || idx}`}
                   className="group bg-white rounded-2xl border border-gray-200 hover:border-primary hover:shadow-xl hover:shadow-primary/10 transition-all text-left flex flex-col h-full relative overflow-hidden"
                 >
                   <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
@@ -238,8 +238,8 @@ export default function ProductGrid({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredProducts.map(product => (
-                  <tr key={product.id} className="hover:bg-gray-50 transition-colors group">
+                {filteredProducts.map((product, idx) => (
+                  <tr key={`prod-list-${product.id || idx}`} className="hover:bg-gray-50 transition-colors group">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">

@@ -1544,8 +1544,8 @@ export default function AccountingSystem({
                       <div className="space-y-6">
                         <div className="space-y-3">
                           <h4 className="text-[10px] font-black text-primary uppercase tracking-widest border-b border-primary/10 pb-1">Revenue</h4>
-                          {ledgerAccounts.filter(a => a.type === 'Revenue').map(a => (
-                            <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                          {ledgerAccounts.filter(a => a.type === 'Revenue').map((a, idx) => (
+                            <div key={`p-rev-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                               <span>{a.name}</span>
                               <span>{formatCurrency(a.balance)}</span>
                             </div>
@@ -1558,8 +1558,8 @@ export default function AccountingSystem({
 
                         <div className="space-y-3">
                           <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest border-b border-red-500/10 pb-1">Expenses</h4>
-                          {ledgerAccounts.filter(a => a.type === 'Expense').map(a => (
-                            <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                          {ledgerAccounts.filter(a => a.type === 'Expense').map((a, idx) => (
+                            <div key={`p-exp-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                               <span>{a.name}</span>
                               <span>{formatCurrency(a.balance)}</span>
                             </div>
@@ -1588,8 +1588,8 @@ export default function AccountingSystem({
                       <div className="space-y-6">
                         <div className="space-y-3">
                           <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-widest border-b border-blue-500/10 pb-1">Assets</h4>
-                          {ledgerAccounts.filter(a => a.type === 'Asset').map(a => (
-                            <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                          {ledgerAccounts.filter(a => a.type === 'Asset').map((a, idx) => (
+                            <div key={`p-asset-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                               <span>{a.name}</span>
                               <span>{formatCurrency(a.balance)}</span>
                             </div>
@@ -1602,14 +1602,14 @@ export default function AccountingSystem({
 
                         <div className="space-y-3">
                           <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest border-b border-amber-500/10 pb-1">Liabilities & Equity</h4>
-                          {ledgerAccounts.filter(a => a.type === 'Liability').map(a => (
-                            <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                          {ledgerAccounts.filter(a => a.type === 'Liability').map((a, idx) => (
+                            <div key={`p-liab-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                               <span>{a.name}</span>
                               <span>{formatCurrency(a.balance)}</span>
                             </div>
                           ))}
-                          {ledgerAccounts.filter(a => a.type === 'Equity').map(a => (
-                            <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                          {ledgerAccounts.filter(a => a.type === 'Equity').map((a, idx) => (
+                            <div key={`p-eq-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                               <span>{a.name}</span>
                               <span>{formatCurrency(a.balance)}</span>
                             </div>
@@ -1650,8 +1650,8 @@ export default function AccountingSystem({
 
                 <div className="space-y-3">
                   <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest border-b border-red-500/10 pb-1">Expenses</h4>
-                  {ledgerAccounts.filter(a => a.type === 'Expense').map(a => (
-                    <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                  {ledgerAccounts.filter(a => a.type === 'Expense').map((a, idx) => (
+                    <div key={`screen-exp-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                       <span>{a.name}</span>
                       <span>{formatCurrency(a.balance)}</span>
                     </div>
@@ -1679,8 +1679,8 @@ export default function AccountingSystem({
               <div className="space-y-6">
                 <div className="space-y-3">
                   <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-widest border-b border-blue-500/10 pb-1">Assets</h4>
-                  {ledgerAccounts.filter(a => a.type === 'Asset').map(a => (
-                    <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                  {ledgerAccounts.filter(a => a.type === 'Asset').map((a, idx) => (
+                    <div key={`screen-asset-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                       <span>{a.name}</span>
                       <span>{formatCurrency(a.balance)}</span>
                     </div>
@@ -1693,14 +1693,14 @@ export default function AccountingSystem({
 
                 <div className="space-y-3">
                   <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest border-b border-amber-500/10 pb-1">Liabilities & Equity</h4>
-                  {ledgerAccounts.filter(a => a.type === 'Liability').map(a => (
-                    <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                  {ledgerAccounts.filter(a => a.type === 'Liability').map((a, idx) => (
+                    <div key={`screen-liab-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                       <span>{a.name}</span>
                       <span>{formatCurrency(a.balance)}</span>
                     </div>
                   ))}
-                  {ledgerAccounts.filter(a => a.type === 'Equity').map(a => (
-                    <div key={a.id} className="flex justify-between text-xs font-bold text-gray-700">
+                  {ledgerAccounts.filter(a => a.type === 'Equity').map((a, idx) => (
+                    <div key={`screen-eq-${a.id || idx}`} className="flex justify-between text-xs font-bold text-gray-700">
                       <span>{a.name}</span>
                       <span>{formatCurrency(a.balance)}</span>
                     </div>

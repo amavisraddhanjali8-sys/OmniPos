@@ -14,11 +14,13 @@ import Settings from './components/settings/Settings';
 import ClientManagement from './components/customers/ClientManagement';
 import InventorySystem from './components/inventory/InventorySystem';
 import OrderPortal from './components/pos/OrderPortal';
-import { Product, CartItem, Client, CompanySettings, Transaction, Quotation, Invoice, Expense, Supplier, AuditLog, LedgerAccount, LedgerEntry, JournalEntry } from './types';
+import { Product, CartItem, Client, CompanySettings, Transaction, Quotation, Invoice, Expense, Supplier, AuditLog, LedgerAccount, LedgerEntry, JournalEntry, BadDebtRecord } from './types';
 import { PRODUCTS, MOCK_CLIENTS, INITIAL_SETTINGS, MOCK_TRANSACTIONS, MOCK_SUPPLIERS, MOCK_AUDIT_LOGS, INITIAL_ACCOUNTS } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
-import { Barcode, AlertCircle, CheckCircle2, FileText, Receipt, DollarSign, Truck, Printer, X } from 'lucide-react';
+import { Barcode, AlertCircle, CheckCircle2, FileText, Receipt, DollarSign, Truck, Printer, X, Database } from 'lucide-react';
 import { cn, formatCurrency } from './lib/utils';
+import { sqlDb } from './lib/sqlDatabase';
+import SqlDatabaseModal from './components/database/SqlDatabaseModal';
 import InvoiceSystem from './components/invoice/InvoiceSystem';
 import ExpenseSystem from './components/expense/ExpenseSystem';
 import SupplierManagement from './components/suppliers/SupplierManagement';
@@ -42,29 +44,31 @@ export default function App() {
       const saved = localStorage.getItem('omni_products');
       if (saved) {
         const parsed: Product[] = JSON.parse(saved);
-        return parsed.map(p => {
-          const defaultProd = PRODUCTS.find(dp => dp.id === p.id);
-          if (p.image && p.image.includes('picsum.photos') && defaultProd?.image) {
-            return { ...p, image: defaultProd.image };
-          }
-          return p;
-        });
+        return parsed.filter(p => !['acc1','acc2','acc3','pr1','pr2','pr3','rel1','rel2','bill1','bk1','bk2','bk3'].includes(p.id));
       }
-      return PRODUCTS;
-    } catch { return PRODUCTS; }
+      return [];
+    } catch { return []; }
   });
   const [categories, setCategories] = useState<string[]>(['Reloads', 'Bills', 'Printing', 'Accessories', 'Books', 'Stationery']);
   const [clients, setClients] = useState<Client[]>(() => {
     try {
       const saved = localStorage.getItem('omni_clients');
-      return saved ? JSON.parse(saved) : MOCK_CLIENTS;
-    } catch { return MOCK_CLIENTS; }
+      if (saved) {
+        const parsed: Client[] = JSON.parse(saved);
+        return parsed.filter(c => !['c1', 'c2'].includes(c.id));
+      }
+      return [];
+    } catch { return []; }
   });
   const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
     try {
       const saved = localStorage.getItem('omni_suppliers');
-      return saved ? JSON.parse(saved) : MOCK_SUPPLIERS;
-    } catch { return MOCK_SUPPLIERS; }
+      if (saved) {
+        const parsed: Supplier[] = JSON.parse(saved);
+        return parsed.filter(s => !['s1', 's2', 's3'].includes(s.id));
+      }
+      return [];
+    } catch { return []; }
   });
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -77,8 +81,12 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     try {
       const saved = localStorage.getItem('omni_transactions');
-      return saved ? JSON.parse(saved) : MOCK_TRANSACTIONS;
-    } catch { return MOCK_TRANSACTIONS; }
+      if (saved) {
+        const parsed: Transaction[] = JSON.parse(saved);
+        return parsed.filter(t => !['t1', 't2', 't3', 't4', 't5'].includes(t.id));
+      }
+      return [];
+    } catch { return []; }
   });
   const [quotations, setQuotations] = useState<Quotation[]>(() => {
     try {
@@ -121,7 +129,23 @@ export default function App() {
       return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
     } catch { return INITIAL_SETTINGS; }
   });
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(MOCK_AUDIT_LOGS);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_audit_logs');
+      if (saved) {
+        const parsed: AuditLog[] = JSON.parse(saved);
+        return parsed.filter(l => !['l1', 'l2', 'l3'].includes(l.id));
+      }
+      return [];
+    } catch { return []; }
+  });
+  const [badDebts, setBadDebts] = useState<BadDebtRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('omni_bad_debts');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [orderToRevise, setOrderToRevise] = useState<Transaction | null>(null);
   const [orderToDeleteId, setOrderToDeleteId] = useState<string | null>(null);
   const [isClearOrdersConfirmOpen, setIsClearOrdersConfirmOpen] = useState(false);
@@ -163,6 +187,109 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('omni_settings', JSON.stringify(companySettings)); } catch {}
   }, [companySettings]);
+
+  useEffect(() => {
+    try { localStorage.setItem('omni_bad_debts', JSON.stringify(badDebts)); } catch {}
+  }, [badDebts]);
+
+  // Synchronize state into the constant relational SQL Database across all portals
+  useEffect(() => {
+    sqlDb.syncFromState({
+      clients,
+      suppliers,
+      products,
+      quotations,
+      invoices,
+      transactions,
+      expenses,
+      badDebts,
+      ledgerAccounts,
+      auditLogs
+    });
+  }, [clients, suppliers, products, quotations, invoices, transactions, expenses, badDebts, ledgerAccounts, auditLogs]);
+
+  // One-time automatic purge of legacy dummy records
+  useEffect(() => {
+    try {
+      const isCleaned = localStorage.getItem('omni_dummy_data_cleaned_v2');
+      if (!isCleaned) {
+        localStorage.removeItem('omni_products');
+        localStorage.removeItem('omni_clients');
+        localStorage.removeItem('omni_suppliers');
+        localStorage.removeItem('omni_orders');
+        localStorage.removeItem('omni_transactions');
+        localStorage.removeItem('omni_quotations');
+        localStorage.removeItem('omni_invoices');
+        localStorage.removeItem('omni_expenses');
+        localStorage.removeItem('omni_audit_logs');
+        localStorage.removeItem('omni_bad_debts');
+        localStorage.removeItem('omni_relational_sql_db_v1');
+        localStorage.setItem('omni_dummy_data_cleaned_v2', 'true');
+        setProducts([]);
+        setClients([]);
+        setSuppliers([]);
+        setOrders([]);
+        setTransactions([]);
+        setQuotations([]);
+        setInvoices([]);
+        setExpenses([]);
+        setBadDebts([]);
+        setAuditLogs([]);
+        sqlDb.purgeAllDummyRecords();
+      }
+    } catch {}
+  }, []);
+
+  const handlePurgeAllDummyData = () => {
+    sqlDb.purgeAllDummyRecords();
+    setProducts([]);
+    setClients([]);
+    setSuppliers([]);
+    setOrders([]);
+    setTransactions([]);
+    setQuotations([]);
+    setInvoices([]);
+    setExpenses([]);
+    setBadDebts([]);
+    setAuditLogs([{
+      id: 'audit-purge-' + Date.now(),
+      userId: 'u1',
+      userName: 'Admin User',
+      action: 'Database Purged',
+      details: 'All dummy and sample records were deleted. Clean constant SQL database initialized.',
+      date: new Date().toISOString(),
+      type: 'warning',
+      category: 'system'
+    }]);
+    addNotification({
+      title: 'Dummy Records Purged',
+      message: 'All dummy records have been permanently cleared from all portals and the SQL database.',
+      type: 'success',
+      category: 'system'
+    });
+  };
+
+  const handleRecordClientBadDebt = (record: BadDebtRecord) => {
+    setBadDebts(prev => [record, ...prev]);
+    // Record accounting entry: Debit 'acc-bad-debt' (Bad Debt Expense), Credit 'acc-ar'
+    recordAccountingEntry(
+      `Bad Debt Write-off: ${record.entityName} (${record.reason})`,
+      [{ accountId: 'acc-bad-debt', amount: record.amount }],
+      [{ accountId: 'acc-ar', amount: record.amount }],
+      record.id
+    );
+  };
+
+  const handleRecordSupplierWriteOff = (record: BadDebtRecord) => {
+    setBadDebts(prev => [record, ...prev]);
+    // Record accounting entry: Debit 'acc-ap', Credit 'acc-other-income'
+    recordAccountingEntry(
+      `Supplier Balance Write-off: ${record.entityName} (${record.reason})`,
+      [{ accountId: 'acc-ap', amount: record.amount }],
+      [{ accountId: 'acc-other-income', amount: record.amount }],
+      record.id
+    );
+  };
 
   const addAuditLog = (action: string, details: string, category: AuditLog['category'], type: AuditLog['type'] = 'info') => {
     const newLog: AuditLog = {
@@ -1101,6 +1228,7 @@ export default function App() {
           isKeyboardOpen={isKeyboardOpen}
           setIsKeyboardOpen={setIsKeyboardOpen}
           onOpenPrinterSettings={() => setIsPrinterSettingsOpen(true)}
+          onOpenSqlDatabase={() => setIsSqlModalOpen(true)}
           printerSettings={printerSettings}
           lowStockCount={products.filter(p => !p.isService && p.stock <= p.minStock).length}
           searchQuery={searchQuery}
@@ -1113,6 +1241,7 @@ export default function App() {
             setActiveTab={setActiveTab} 
             lowStockCount={products.filter(p => !p.isService && p.stock <= p.minStock).length}
             language={language}
+            onOpenSqlDatabase={() => setIsSqlModalOpen(true)}
           />
         )}
         
@@ -1353,6 +1482,8 @@ export default function App() {
             onAddAuditLog={addAuditLog}
             transactions={transactions}
             invoices={invoices}
+            onUpdateInvoices={handleUpdateInvoices}
+            onRecordBadDebt={handleRecordClientBadDebt}
             language={language}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
@@ -1402,6 +1533,7 @@ export default function App() {
                 );
               }
             }}
+            onRecordSupplierWriteOff={handleRecordSupplierWriteOff}
             onAddAuditLog={addAuditLog}
             transactions={transactions}
             language={language}
@@ -1705,6 +1837,13 @@ export default function App() {
           confirmText="Clear All"
           cancelText="Cancel"
           type="danger"
+        />
+
+        {/* Constant Relational SQL Database Console & Diagnostics Modal */}
+        <SqlDatabaseModal
+          isOpen={isSqlModalOpen}
+          onClose={() => setIsSqlModalOpen(false)}
+          onPurgeDummyData={handlePurgeAllDummyData}
         />
       </main>
     </div>

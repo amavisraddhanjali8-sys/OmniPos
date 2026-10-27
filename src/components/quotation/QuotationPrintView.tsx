@@ -58,7 +58,7 @@ export default function QuotationPrintView({ quotation, settings }: QuotationPri
             <p className="text-gray-500 text-[7.5pt] whitespace-pre-line max-w-[320px] leading-relaxed">{settings.address}</p>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[7.5pt]">
               {settings.phones?.map((p, i) => (
-                <span key={i} className="text-gray-500 font-bold">Tel: <span className="font-normal text-gray-700">{p}</span></span>
+                <span key={`quo-phone-${i}-${p}`} className="text-gray-500 font-bold">Tel: <span className="font-normal text-gray-700">{p}</span></span>
               ))}
               {settings.email && <span className="text-gray-500 font-bold">Email: <span className="font-normal text-gray-700">{settings.email}</span></span>}
             </div>
@@ -124,7 +124,7 @@ export default function QuotationPrintView({ quotation, settings }: QuotationPri
           </thead>
           <tbody className="divide-y divide-gray-100 border-x border-b border-gray-200 rounded-b-md overflow-hidden">
             {quotation.items.map((item, i) => (
-              <tr key={i} className="hover:bg-gray-50/50 break-inside-avoid">
+              <tr key={`quo-item-${item.id || i}`} className="hover:bg-gray-50/50 break-inside-avoid">
                 <td className="px-3 py-2">
                   <p className="font-bold text-gray-900">{item.name}</p>
                   {item.category && <p className="text-[6.5pt] text-gray-400 uppercase font-semibold">{item.category}</p>}
@@ -135,7 +135,7 @@ export default function QuotationPrintView({ quotation, settings }: QuotationPri
               </tr>
             ))}
             {Array.from({ length: Math.max(0, 3 - quotation.items.length) }).map((_, i) => (
-              <tr key={`empty-${i}`} className="h-6">
+              <tr key={`quo-empty-row-${i}`} className="h-6">
                 <td className="px-3 py-1"></td>
                 <td className="px-2 py-1"></td>
                 <td className="px-3 py-1"></td>
@@ -194,7 +194,7 @@ export default function QuotationPrintView({ quotation, settings }: QuotationPri
           )}
           {quotation.otherChargesList && quotation.otherChargesList.length > 0 ? (
             quotation.otherChargesList.map((charge, i) => (
-              <div key={i} className="flex justify-between text-[8pt] text-gray-500">
+              <div key={`quo-charge-${charge.id || i}`} className="flex justify-between text-[8pt] text-gray-500">
                 <span className="font-bold uppercase tracking-wider">{charge.description || 'Other Charge'}</span>
                 <span className="font-mono text-gray-800">{formatCurrency(charge.amount, settings.currency)}</span>
               </div>
@@ -224,7 +224,7 @@ export default function QuotationPrintView({ quotation, settings }: QuotationPri
           </h4>
           <div className="space-y-1 text-[7pt] text-gray-700 leading-normal">
             {termsToDisplay.map((term, i) => (
-              <div key={i} className="flex items-start gap-1.5 break-words">
+              <div key={`quo-term-${i}`} className="flex items-start gap-1.5 break-words">
                 <span className="font-bold text-primary shrink-0">{i + 1}.</span>
                 <span className="flex-1">{term}</span>
               </div>

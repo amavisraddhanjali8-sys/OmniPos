@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, User, Upload, AlertCircle, Receipt, X, DollarSign } from 'lucide-react';
-import { Client, Transaction, Invoice } from '../../types';
+import { Client, Transaction, Invoice, BadDebtRecord } from '../../types';
 import { MOCK_CLIENTS } from '../../constants';
 import { useNotifications } from '../../context/NotificationContext';
 import { cn, formatCurrency } from '../../lib/utils';
@@ -11,6 +11,8 @@ interface ClientManagementProps {
   clients: Client[];
   onUpdateClients: (clients: Client[]) => void;
   onUpdateTransactions?: (transactions: Transaction[]) => void;
+  onUpdateInvoices?: (invoices: Invoice[]) => void;
+  onRecordBadDebt?: (record: BadDebtRecord) => void;
   onAddAuditLog?: (action: string, details: string, category: any, type?: any) => void;
   transactions?: Transaction[];
   invoices?: Invoice[];
@@ -23,6 +25,8 @@ export default function ClientManagement({
   clients, 
   onUpdateClients, 
   onUpdateTransactions,
+  onUpdateInvoices,
+  onRecordBadDebt,
   onAddAuditLog, 
   transactions = [], 
   invoices = [], 
@@ -35,10 +39,17 @@ export default function ClientManagement({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isBadDebtModalOpen, setIsBadDebtModalOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
+  const [blockedDeleteClient, setBlockedDeleteClient] = useState<{ client: Client; balance: number } | null>(null);
   const [selectedClientForPayment, setSelectedClientForPayment] = useState<Client | null>(null);
+  const [selectedClientForBadDebt, setSelectedClientForBadDebt] = useState<Client | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [badDebtAmount, setBadDebtAmount] = useState('');
+  const [badDebtReason, setBadDebtReason] = useState('');
+  const [badDebtNotes, setBadDebtNotes] = useState('');
+  const [badDebtDate, setBadDebtDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,37 +131,14 @@ export default function ClientManagement({
     const client = clients.find(c => c.id === id);
     if (!client) return;
 
-    // Check for outstanding balance in transactions
-    const clientTransactions = transactions.filter(t => t.clientId === id);
-    const transactionBalance = clientTransactions.reduce((acc, t) => {
-      // Ignore transactions linked to invoices to avoid double counting with invoiceBalance
-      if (t.referenceId && invoices.some(inv => inv.id === t.referenceId)) {
-        return acc;
-      }
+    const totalCredit = calculateClientBalance(id);
 
-      const amount = t.amount || 0;
-      const paid = t.amountPaid || 0;
-
-      if (t.type === 'Sale') {
-        return acc + (amount - paid);
-      } else if (t.type === 'Income') {
-        return acc - amount;
-      } else if (t.type === 'Expense') {
-        return acc + amount;
-      }
-      return acc;
-    }, 0);
-
-    // Check for outstanding balance in invoices
-    const clientInvoices = invoices.filter(inv => inv.clientId === id);
-    const invoiceBalance = clientInvoices.reduce((acc, inv) => acc + (inv.balance || 0), 0);
-
-    const totalCredit = transactionBalance + invoiceBalance;
-
+    // Strictly prevent deleting clients with due balances until collected or written off
     if (Math.abs(totalCredit) > 0.01) {
+      setBlockedDeleteClient({ client, balance: totalCredit });
       addNotification({
-        title: t.cannotDeleteClient,
-        message: `${client.name} ${t.settleBalanceFirst} (${formatCurrency(totalCredit)})`,
+        title: 'Account Deletion Blocked',
+        message: `Cannot delete ${client.name}. Outstanding balance of ${formatCurrency(totalCredit)} must be settled or written off first.`,
         type: 'error',
         category: 'system'
       });
@@ -159,6 +147,111 @@ export default function ClientManagement({
 
     setClientToDelete(id);
     setIsDeleteConfirmOpen(true);
+  };
+
+  const handleOpenBadDebtModal = (client: Client, prefilledAmount?: number) => {
+    const bal = prefilledAmount !== undefined ? prefilledAmount : calculateClientBalance(client.id);
+    setSelectedClientForBadDebt(client);
+    setBadDebtAmount(bal > 0 ? bal.toFixed(2) : '');
+    setBadDebtReason('');
+    setBadDebtNotes('');
+    setBadDebtDate(new Date().toISOString().split('T')[0]);
+    setIsBadDebtModalOpen(true);
+  };
+
+  const handleConfirmBadDebt = () => {
+    if (!selectedClientForBadDebt) return;
+    const amount = parseFloat(badDebtAmount);
+    if (isNaN(amount) || amount <= 0) {
+      addNotification({
+        title: 'Invalid Amount',
+        message: 'Please enter a valid write-off amount.',
+        type: 'error',
+        category: 'system'
+      });
+      return;
+    }
+
+    if (!badDebtReason.trim()) {
+      addNotification({
+        title: 'Reason Required',
+        message: 'A documented reason is strictly required to record a Bad Debt write-off.',
+        type: 'warning',
+        category: 'system'
+      });
+      return;
+    }
+
+    const badDebtRecord: BadDebtRecord = {
+      id: 'BD-' + Date.now(),
+      entityType: 'client',
+      entityId: selectedClientForBadDebt.id,
+      entityName: selectedClientForBadDebt.name,
+      amount: amount,
+      reason: badDebtReason.trim(),
+      date: badDebtDate || new Date().toISOString(),
+      notes: badDebtNotes.trim(),
+      createdDate: new Date().toISOString()
+    };
+
+    // 1. Create offsetting Transaction
+    const writeOffTransaction: Transaction = {
+      id: 'TX-WO-' + Date.now(),
+      type: 'Income',
+      category: 'Bad Debt Write-Off',
+      amount: amount,
+      date: badDebtDate || new Date().toISOString(),
+      description: `Bad Debt Write-off for ${selectedClientForBadDebt.name} [Reason: ${badDebtReason.trim()}]`,
+      paymentMethod: 'Adjustment / Write-Off',
+      status: 'Completed',
+      clientId: selectedClientForBadDebt.id,
+      clientName: selectedClientForBadDebt.name
+    };
+
+    if (onUpdateTransactions) {
+      onUpdateTransactions([writeOffTransaction, ...transactions]);
+    }
+
+    // 2. Adjust Invoices: clear balance on client's open invoices
+    if (onUpdateInvoices && invoices.length > 0) {
+      let remainingWriteOff = amount;
+      const updatedInvoices = invoices.map(inv => {
+        if (inv.clientId === selectedClientForBadDebt.id && (inv.balance || 0) > 0) {
+          const deduction = Math.min(inv.balance || 0, remainingWriteOff);
+          remainingWriteOff -= deduction;
+          const newBal = (inv.balance || 0) - deduction;
+          return {
+            ...inv,
+            balance: Math.max(0, newBal),
+            isBadDebt: true,
+            status: newBal <= 0.01 ? ('Paid' as const) : inv.status
+          };
+        }
+        return inv;
+      });
+      onUpdateInvoices(updatedInvoices);
+    }
+
+    // 3. Notify external accounting listener if provided
+    onRecordBadDebt?.(badDebtRecord);
+
+    onAddAuditLog?.(
+      'Bad Debt Written Off',
+      `Recorded bad debt write-off of ${formatCurrency(amount)} for ${selectedClientForBadDebt.name}. Reason: ${badDebtReason.trim()}`,
+      'clients',
+      'warning'
+    );
+
+    addNotification({
+      title: 'Bad Debt Recorded',
+      message: `Successfully written off ${formatCurrency(amount)} for ${selectedClientForBadDebt.name}.`,
+      type: 'success',
+      category: 'accounting'
+    });
+
+    setIsBadDebtModalOpen(false);
+    setSelectedClientForBadDebt(null);
+    setBlockedDeleteClient(null);
   };
 
   const confirmDelete = () => {
@@ -353,6 +446,15 @@ export default function ClientManagement({
                       >
                         <Receipt size={14} />
                       </button>
+                      {calculateClientBalance(client.id) > 0.01 && (
+                        <button 
+                          onClick={() => handleOpenBadDebtModal(client)}
+                          className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors"
+                          title="Record Bad Debt / Write-Off"
+                        >
+                          <AlertCircle size={14} />
+                        </button>
+                      )}
                       <button 
                         onClick={() => startEdit(client)}
                         className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded transition-colors"
@@ -576,6 +678,180 @@ export default function ClientManagement({
                   className="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-xs shadow-md shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 disabled:shadow-none"
                 >
                   Confirm Payment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bad Debt / Write-Off Modal */}
+      {isBadDebtModalOpen && selectedClientForBadDebt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100">
+            <div className="p-6 bg-gradient-to-r from-amber-600 via-red-600 to-amber-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <AlertCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black uppercase tracking-tight">Record Bad Debt / Write-Off</h2>
+                  <p className="text-xs text-amber-100 font-medium">{selectedClientForBadDebt.name}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setIsBadDebtModalOpen(false); setSelectedClientForBadDebt(null); }}
+                className="p-1.5 hover:bg-white/20 rounded-xl transition-colors text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-start gap-3">
+                <AlertCircle className="text-red-500 mt-0.5 shrink-0" size={16} />
+                <div className="text-xs">
+                  <span className="font-bold text-red-900 block">Current Outstanding Balance:</span>
+                  <span className="text-base font-black text-red-600">
+                    {formatCurrency(calculateClientBalance(selectedClientForBadDebt.id))}
+                  </span>
+                  <p className="text-[11px] text-red-700 mt-0.5">
+                    Recording a write-off clears the uncollectible balance, posts a Bad Debt Expense entry, and allows this account to be safely deleted once cleared.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  Write-Off Amount <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={badDebtAmount}
+                    onChange={e => setBadDebtAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                    Write-Off Reason <span className="text-red-500">* (Required)</span>
+                  </label>
+                </div>
+                <input 
+                  type="text"
+                  value={badDebtReason}
+                  onChange={e => setBadDebtReason(e.target.value)}
+                  placeholder="e.g. Customer declared bankruptcy, Untraceable debt, Disputed amount"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-red-500"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    'Customer bankruptcy / liquidated',
+                    'Untraceable / Abandoned debt',
+                    'Disputed unrecoverable balance',
+                    'Mutual settlement waiver'
+                  ].map(reason => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => setBadDebtReason(reason)}
+                      className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-[10px] font-medium transition-colors"
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date</label>
+                  <input 
+                    type="date"
+                    value={badDebtDate}
+                    onChange={e => setBadDebtDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-red-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Notes / Ref</label>
+                  <input 
+                    type="text"
+                    value={badDebtNotes}
+                    onChange={e => setBadDebtNotes(e.target.value)}
+                    placeholder="Optional reference"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex gap-3">
+                <button 
+                  onClick={() => { setIsBadDebtModalOpen(false); setSelectedClientForBadDebt(null); }}
+                  className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs hover:bg-gray-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleConfirmBadDebt}
+                  disabled={!badDebtAmount || parseFloat(badDebtAmount) <= 0 || !badDebtReason.trim()}
+                  className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50"
+                >
+                  Confirm Write-Off
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blocked Account Deletion Modal */}
+      {blockedDeleteClient && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl border border-red-100">
+            <div className="p-6 bg-red-50 border-b border-red-100 flex items-start gap-4">
+              <div className="p-3 bg-red-100 rounded-2xl text-red-600 shrink-0">
+                <AlertCircle size={28} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900">Account Deletion Blocked</h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  <span className="font-bold text-gray-900">{blockedDeleteClient.client.name}</span> has an active due balance of{' '}
+                  <span className="font-black text-red-600">{formatCurrency(blockedDeleteClient.balance)}</span>.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                By business rule, client accounts with outstanding balances <strong>cannot be deleted</strong> until the balance is either collected or recorded as a <strong>Write-Off / Bad Debt</strong> with a documented reason.
+              </p>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    const c = blockedDeleteClient.client;
+                    const bal = blockedDeleteClient.balance;
+                    setBlockedDeleteClient(null);
+                    handleOpenBadDebtModal(c, bal);
+                  }}
+                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
+                >
+                  <AlertCircle size={14} />
+                  Record Bad Debt / Write-Off Now
+                </button>
+                <button
+                  onClick={() => setBlockedDeleteClient(null)}
+                  className="w-full py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors"
+                >
+                  Close & Keep Account
                 </button>
               </div>
             </div>

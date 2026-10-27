@@ -10,11 +10,14 @@ import {
   MapPin, 
   User, 
   X, 
-  Save,
-  Truck,
-  Tag
+  Save, 
+  Truck, 
+  Tag, 
+  AlertCircle, 
+  Receipt, 
+  DollarSign 
 } from 'lucide-react';
-import { Supplier, Transaction } from '../../types';
+import { Supplier, Transaction, BadDebtRecord } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../../context/NotificationContext';
 import { cn, formatCurrency } from '../../lib/utils';
@@ -25,6 +28,7 @@ interface SupplierManagementProps {
   suppliers: Supplier[];
   onUpdateSuppliers: (suppliers: Supplier[]) => void;
   onUpdateTransactions?: (transactions: Transaction[]) => void;
+  onRecordSupplierWriteOff?: (record: BadDebtRecord) => void;
   onAddAuditLog?: (action: string, details: string, category: any, type?: any) => void;
   transactions?: Transaction[];
   language?: Language;
@@ -36,6 +40,7 @@ export default function SupplierManagement({
   suppliers, 
   onUpdateSuppliers, 
   onUpdateTransactions,
+  onRecordSupplierWriteOff,
   onAddAuditLog, 
   transactions = [], 
   language = 'en',
@@ -47,10 +52,17 @@ export default function SupplierManagement({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<string | null>(null);
+  const [blockedDeleteSupplier, setBlockedDeleteSupplier] = useState<{ supplier: Supplier; payable: number } | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isWriteOffModalOpen, setIsWriteOffModalOpen] = useState(false);
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
+  const [selectedSupplierForWriteOff, setSelectedSupplierForWriteOff] = useState<Supplier | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [writeOffAmount, setWriteOffAmount] = useState('');
+  const [writeOffReason, setWriteOffReason] = useState('');
+  const [writeOffNotes, setWriteOffNotes] = useState('');
+  const [writeOffDate, setWriteOffDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
   const handleRecordPayment = () => {
@@ -136,13 +148,9 @@ export default function SupplierManagement({
     setEditingSupplier(null);
   };
 
-  const handleDeleteSupplier = (id: string) => {
-    const supplier = suppliers.find(s => s.id === id);
-    if (!supplier) return;
-
-    // Check for outstanding payables
+  const calculateSupplierPayable = (id: string) => {
     const supplierTransactions = transactions.filter(t => t.supplierId === id);
-    const totalPayable = supplierTransactions.reduce((acc, t) => {
+    return supplierTransactions.reduce((acc, t) => {
       const amount = t.amount || 0;
       const paid = t.amountPaid || 0;
 
@@ -155,11 +163,20 @@ export default function SupplierManagement({
       }
       return acc;
     }, 0);
+  };
 
+  const handleDeleteSupplier = (id: string) => {
+    const supplier = suppliers.find(s => s.id === id);
+    if (!supplier) return;
+
+    const totalPayable = calculateSupplierPayable(id);
+
+    // Strictly prevent deleting suppliers with due balances until cleared or written off
     if (Math.abs(totalPayable) > 0.01) {
+      setBlockedDeleteSupplier({ supplier, payable: totalPayable });
       addNotification({
-        title: t.cannotDeleteSupplier,
-        message: `${supplier.name} ${t.settleBalanceFirst} (${formatCurrency(totalPayable)})`,
+        title: 'Supplier Deletion Blocked',
+        message: `Cannot delete ${supplier.name}. Outstanding payable balance of ${formatCurrency(totalPayable)} must be paid or written off first.`,
         type: 'error',
         category: 'system'
       });
@@ -168,6 +185,90 @@ export default function SupplierManagement({
 
     setSupplierToDelete(id);
     setIsDeleteConfirmOpen(true);
+  };
+
+  const handleOpenWriteOffModal = (supplier: Supplier, prefilledAmount?: number) => {
+    const payable = prefilledAmount !== undefined ? prefilledAmount : calculateSupplierPayable(supplier.id);
+    setSelectedSupplierForWriteOff(supplier);
+    setWriteOffAmount(payable > 0 ? payable.toFixed(2) : '');
+    setWriteOffReason('');
+    setWriteOffNotes('');
+    setWriteOffDate(new Date().toISOString().split('T')[0]);
+    setIsWriteOffModalOpen(true);
+  };
+
+  const handleConfirmWriteOff = () => {
+    if (!selectedSupplierForWriteOff) return;
+    const amount = parseFloat(writeOffAmount);
+    if (isNaN(amount) || amount <= 0) {
+      addNotification({
+        title: 'Invalid Amount',
+        message: 'Please enter a valid write-off amount.',
+        type: 'error',
+        category: 'system'
+      });
+      return;
+    }
+
+    if (!writeOffReason.trim()) {
+      addNotification({
+        title: 'Reason Required',
+        message: 'A documented reason is strictly required to record a supplier write-off.',
+        type: 'warning',
+        category: 'system'
+      });
+      return;
+    }
+
+    const badDebtRecord: BadDebtRecord = {
+      id: 'WO-SUP-' + Date.now(),
+      entityType: 'supplier',
+      entityId: selectedSupplierForWriteOff.id,
+      entityName: selectedSupplierForWriteOff.name,
+      amount: amount,
+      reason: writeOffReason.trim(),
+      date: writeOffDate || new Date().toISOString(),
+      notes: writeOffNotes.trim(),
+      createdDate: new Date().toISOString()
+    };
+
+    // Create offsetting Expense transaction (or settlement entry) to clear payable balance
+    const writeOffTransaction: Transaction = {
+      id: 'TX-SUP-WO-' + Date.now(),
+      type: 'Expense',
+      category: 'Supplier Balance Write-Off',
+      amount: amount,
+      date: writeOffDate || new Date().toISOString(),
+      description: `Payable Write-off / Dispute Settlement for ${selectedSupplierForWriteOff.name} [Reason: ${writeOffReason.trim()}]`,
+      paymentMethod: 'Dispute / Write-Off Settlement',
+      status: 'Completed',
+      supplierId: selectedSupplierForWriteOff.id,
+      supplierName: selectedSupplierForWriteOff.name
+    };
+
+    if (onUpdateTransactions) {
+      onUpdateTransactions([writeOffTransaction, ...transactions]);
+    }
+
+    onRecordSupplierWriteOff?.(badDebtRecord);
+
+    onAddAuditLog?.(
+      'Supplier Balance Written Off',
+      `Recorded payable write-off of ${formatCurrency(amount)} for ${selectedSupplierForWriteOff.name}. Reason: ${writeOffReason.trim()}`,
+      'suppliers',
+      'warning'
+    );
+
+    addNotification({
+      title: 'Balance Written Off',
+      message: `Successfully written off ${formatCurrency(amount)} payable for ${selectedSupplierForWriteOff.name}.`,
+      type: 'success',
+      category: 'accounting'
+    });
+
+    setIsWriteOffModalOpen(false);
+    setSelectedSupplierForWriteOff(null);
+    setBlockedDeleteSupplier(null);
   };
 
   const confirmDelete = () => {
@@ -230,11 +331,20 @@ export default function SupplierManagement({
                 <div className="flex gap-1.5 items-center">
                   <button 
                     onClick={() => { setSelectedSupplierForPayment(supplier); setIsPaymentModalOpen(true); }}
-                    className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all"
+                    className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all"
                     title="Record Payment"
                   >
-                    <Save size={16} />
+                    <Receipt size={16} />
                   </button>
+                  {calculateSupplierPayable(supplier.id) > 0.01 && (
+                    <button 
+                      onClick={() => handleOpenWriteOffModal(supplier)}
+                      className="p-2 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all"
+                      title="Record Write-Off / Dispute Settlement"
+                    >
+                      <AlertCircle size={16} />
+                    </button>
+                  )}
                   <button 
                     onClick={() => { setEditingSupplier(supplier); setIsModalOpen(true); }}
                     className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
@@ -257,6 +367,21 @@ export default function SupplierManagement({
                   <span className="text-[10px] uppercase tracking-widest">{supplier.category}</span>
                 </div>
               </div>
+
+              {(() => {
+                const payable = calculateSupplierPayable(supplier.id);
+                return (
+                  <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-2xl border border-gray-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Payable Balance</span>
+                    <span className={cn(
+                      "text-xs font-black font-mono",
+                      payable > 0.01 ? "text-amber-600" : "text-gray-400"
+                    )}>
+                      {formatCurrency(payable)}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-2 pt-2">
                 <div className="flex items-center gap-3 text-gray-600">
@@ -515,6 +640,178 @@ export default function SupplierManagement({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Supplier Write-Off / Dispute Settlement Modal */}
+      {isWriteOffModalOpen && selectedSupplierForWriteOff && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100">
+            <div className="p-6 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <AlertCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black uppercase tracking-tight">Record Supplier Balance Write-Off</h2>
+                  <p className="text-xs text-amber-100 font-medium">{selectedSupplierForWriteOff.name}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setIsWriteOffModalOpen(false); setSelectedSupplierForWriteOff(null); }}
+                className="p-1.5 hover:bg-white/20 rounded-xl transition-colors text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-3">
+                <AlertCircle className="text-amber-500 mt-0.5 shrink-0" size={16} />
+                <div className="text-xs">
+                  <span className="font-bold text-amber-900 block">Current Outstanding Payable:</span>
+                  <span className="text-base font-black text-amber-600">
+                    {formatCurrency(calculateSupplierPayable(selectedSupplierForWriteOff.id))}
+                  </span>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    Writing off an unpayable or disputed balance clears the vendor liability from the ledger and allows the supplier account to be deleted once zeroed.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  Write-Off Amount <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={writeOffAmount}
+                    onChange={e => setWriteOffAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  Write-Off Reason <span className="text-red-500">* (Required)</span>
+                </label>
+                <input 
+                  type="text"
+                  value={writeOffReason}
+                  onChange={e => setWriteOffReason(e.target.value)}
+                  placeholder="e.g. Defective goods dispute waiver, Vendor ceased operations, Discount settlement"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-amber-500"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    'Defective goods dispute waiver',
+                    'Vendor ceased business / liquidated',
+                    'Negotiated discount settlement',
+                    'Mutual cancellation of balance'
+                  ].map(reason => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => setWriteOffReason(reason)}
+                      className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-[10px] font-medium transition-colors"
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date</label>
+                  <input 
+                    type="date"
+                    value={writeOffDate}
+                    onChange={e => setWriteOffDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Notes / Ref</label>
+                  <input 
+                    type="text"
+                    value={writeOffNotes}
+                    onChange={e => setWriteOffNotes(e.target.value)}
+                    placeholder="Optional details"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex gap-3">
+                <button 
+                  onClick={() => { setIsWriteOffModalOpen(false); setSelectedSupplierForWriteOff(null); }}
+                  className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs hover:bg-gray-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleConfirmWriteOff}
+                  disabled={!writeOffAmount || parseFloat(writeOffAmount) <= 0 || !writeOffReason.trim()}
+                  className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl font-bold text-xs shadow-md shadow-amber-600/20 hover:bg-amber-700 transition-all disabled:opacity-50"
+                >
+                  Confirm Write-Off
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blocked Supplier Deletion Modal */}
+      {blockedDeleteSupplier && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl border border-red-100">
+            <div className="p-6 bg-red-50 border-b border-red-100 flex items-start gap-4">
+              <div className="p-3 bg-red-100 rounded-2xl text-red-600 shrink-0">
+                <AlertCircle size={28} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900">Supplier Deletion Blocked</h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  <span className="font-bold text-gray-900">{blockedDeleteSupplier.supplier.name}</span> has an active payable balance of{' '}
+                  <span className="font-black text-red-600">{formatCurrency(blockedDeleteSupplier.payable)}</span>.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                By business rule, supplier accounts with outstanding payable balances <strong>cannot be deleted</strong> until the balance is either settled or written off with an input reason.
+              </p>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    const s = blockedDeleteSupplier.supplier;
+                    const pay = blockedDeleteSupplier.payable;
+                    setBlockedDeleteSupplier(null);
+                    handleOpenWriteOffModal(s, pay);
+                  }}
+                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
+                >
+                  <AlertCircle size={14} />
+                  Record Write-Off / Dispute Settlement
+                </button>
+                <button
+                  onClick={() => setBlockedDeleteSupplier(null)}
+                  className="w-full py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors"
+                >
+                  Close & Keep Supplier
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={isDeleteConfirmOpen}
