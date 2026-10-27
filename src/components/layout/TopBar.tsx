@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Search, User, X, CheckCircle2, AlertTriangle, AlertCircle, Info, Trash2, Barcode, Globe, Keyboard as KeyboardIcon, Home, Printer, Database } from 'lucide-react';
+import { Bell, Search, User, X, CheckCircle2, AlertTriangle, AlertCircle, Info, Trash2, Barcode, Globe, Keyboard as KeyboardIcon, Home, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../../context/NotificationContext';
 import { Notification } from '../../types';
@@ -17,7 +17,6 @@ interface TopBarProps {
   isKeyboardOpen: boolean;
   setIsKeyboardOpen: (open: boolean) => void;
   onOpenPrinterSettings?: () => void;
-  onOpenSqlDatabase?: () => void;
   printerSettings?: {
     receiptPrinter: string;
     reportPrinter: string;
@@ -39,7 +38,6 @@ export default function TopBar({
   isKeyboardOpen,
   setIsKeyboardOpen,
   onOpenPrinterSettings,
-  onOpenSqlDatabase,
   printerSettings,
   lowStockCount = 0,
   searchQuery,
@@ -143,16 +141,6 @@ export default function TopBar({
               <span className="uppercase tracking-wider text-[8px]">Drawer Ready</span>
             </>
           )}
-        </button>
-
-        {/* SQL Relational Database Button */}
-        <button 
-          onClick={onOpenSqlDatabase}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:shadow-md cursor-pointer"
-          title="Open Constant SQL Relational Database Console & Self-Test Suite"
-        >
-          <Database size={13} className="text-indigo-600" />
-          <span className="uppercase tracking-wider">SQL Database</span>
         </button>
 
         {/* Low Stock Indicator */}

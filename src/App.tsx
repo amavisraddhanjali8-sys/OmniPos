@@ -17,10 +17,9 @@ import OrderPortal from './components/pos/OrderPortal';
 import { Product, CartItem, Client, CompanySettings, Transaction, Quotation, Invoice, Expense, Supplier, AuditLog, LedgerAccount, LedgerEntry, JournalEntry, BadDebtRecord } from './types';
 import { PRODUCTS, MOCK_CLIENTS, INITIAL_SETTINGS, MOCK_TRANSACTIONS, MOCK_SUPPLIERS, MOCK_AUDIT_LOGS, INITIAL_ACCOUNTS } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
-import { Barcode, AlertCircle, CheckCircle2, FileText, Receipt, DollarSign, Truck, Printer, X, Database } from 'lucide-react';
+import { Barcode, AlertCircle, CheckCircle2, FileText, Receipt, DollarSign, Truck, Printer, X } from 'lucide-react';
 import { cn, formatCurrency } from './lib/utils';
 import { sqlDb } from './lib/sqlDatabase';
-import SqlDatabaseModal from './components/database/SqlDatabaseModal';
 import InvoiceSystem from './components/invoice/InvoiceSystem';
 import ExpenseSystem from './components/expense/ExpenseSystem';
 import SupplierManagement from './components/suppliers/SupplierManagement';
@@ -145,7 +144,6 @@ export default function App() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [orderToRevise, setOrderToRevise] = useState<Transaction | null>(null);
   const [orderToDeleteId, setOrderToDeleteId] = useState<string | null>(null);
   const [isClearOrdersConfirmOpen, setIsClearOrdersConfirmOpen] = useState(false);
@@ -1228,7 +1226,6 @@ export default function App() {
           isKeyboardOpen={isKeyboardOpen}
           setIsKeyboardOpen={setIsKeyboardOpen}
           onOpenPrinterSettings={() => setIsPrinterSettingsOpen(true)}
-          onOpenSqlDatabase={() => setIsSqlModalOpen(true)}
           printerSettings={printerSettings}
           lowStockCount={products.filter(p => !p.isService && p.stock <= p.minStock).length}
           searchQuery={searchQuery}
@@ -1241,7 +1238,6 @@ export default function App() {
             setActiveTab={setActiveTab} 
             lowStockCount={products.filter(p => !p.isService && p.stock <= p.minStock).length}
             language={language}
-            onOpenSqlDatabase={() => setIsSqlModalOpen(true)}
           />
         )}
         
@@ -1837,13 +1833,6 @@ export default function App() {
           confirmText="Clear All"
           cancelText="Cancel"
           type="danger"
-        />
-
-        {/* Constant Relational SQL Database Console & Diagnostics Modal */}
-        <SqlDatabaseModal
-          isOpen={isSqlModalOpen}
-          onClose={() => setIsSqlModalOpen(false)}
-          onPurgeDummyData={handlePurgeAllDummyData}
         />
       </main>
     </div>

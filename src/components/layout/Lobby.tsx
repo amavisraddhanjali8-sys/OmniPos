@@ -11,8 +11,7 @@ import {
   DollarSign,
   Truck,
   ArrowRight,
-  LayoutDashboard,
-  Database
+  LayoutDashboard
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CompanySettings } from '../../types';
@@ -24,10 +23,9 @@ interface LobbyProps {
   setActiveTab: (tab: string) => void;
   lowStockCount?: number;
   language: Language;
-  onOpenSqlDatabase?: () => void;
 }
 
-export default function Lobby({ companySettings, setActiveTab, lowStockCount = 0, language, onOpenSqlDatabase }: LobbyProps) {
+export default function Lobby({ companySettings, setActiveTab, lowStockCount = 0, language }: LobbyProps) {
   const t = translations[language];
 
   const getTimeGreeting = () => {
@@ -112,14 +110,6 @@ export default function Lobby({ companySettings, setActiveTab, lowStockCount = 0
       pattern: 'zigzags'
     },
     {
-      id: 'database',
-      title: 'SQL Database',
-      description: 'Relational SQL database manager, diagnostics & query engine',
-      icon: Database,
-      color: 'bg-indigo-600',
-      pattern: 'grid'
-    },
-    {
       id: 'settings',
       title: t.settings,
       description: t.settingsDescription,
@@ -165,13 +155,7 @@ export default function Lobby({ companySettings, setActiveTab, lowStockCount = 0
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              onClick={() => {
-                if (tile.id === 'database' && onOpenSqlDatabase) {
-                  onOpenSqlDatabase();
-                } else {
-                  setActiveTab(tile.id);
-                }
-              }}
+              onClick={() => setActiveTab(tile.id)}
               className="group relative h-64 bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden text-left flex flex-col p-8"
             >
               {/* Background UI Pattern */}
